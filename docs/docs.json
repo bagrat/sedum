@@ -11,13 +11,7 @@
     "groups": [
       {
         "group": "Get started",
-        "pages": [
-          "index",
-          "plain-english-tests",
-          "typescript-tests",
-          "format",
-          "goal-mode"
-        ]
+        "pages": ["index", "plain-english-tests", "typescript-tests", "format"]
       },
       {
         "group": "Use Sedum",

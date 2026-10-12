@@ -2,25 +2,6 @@
 title: "RunResult v1 and live progress"
 ---
 
-YAML goal tests populate optional `tests[].goal` with complete, secret-redacted
-`text` and `verify` strings after data resolution, before browser execution.
-HTML reports display these above the replay and steps. Authored-step tests omit
-this field. Existing result files without it remain supported.
-
-YAML goal tests publish an action step after each dispatched click or type, then an
-aggregate step (`kind: verify`, `operation: goal`) when the bounded loop ends.
-Action steps use data-binding names instead of typed values and include target
-scores, incremental planner calls, and opt-in post-action replay frames subject
-to normal privacy rules. The aggregate includes action/request counts and the
-termination reason in `detail`, independent Judge scores when reached, and only
-remaining calls with `purpose: planner` or `judge`, avoiding duplicate usage.
-A flagged goal assertion fails the goal even without `--strict`. The aggregate
-omits page metadata, screenshots and replay frames. Goal failures are not
-automatically restarted by `--retries`.
-
-That required, independent, unflagged verification policy applies to YAML goal
-tests and the exported `runGoal` API.
-
 `@sedum-dev/core/run-result.schema.json` is the Draft 2020-12 schema generated from the same Zod definition used to validate every published snapshot. The schema ID is `https://sedum.dev/schemas/run-result/v1`. The v1 schema may still change incompatibly before its first published release. After v1 is published, incompatible changes require a new major schema version. Consumers should reject unknown major versions.
 
 A step from a TypeScript test carries `group`, the enclosing `ai.group` names

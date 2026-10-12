@@ -113,7 +113,7 @@ Choice and Noul questions and response distributions; appearing in the
 of equivalent accuracy or limits. Direct Cloudflare Clef remains a separate provider.
 
 This selection ignores `TYPESAFE_*` settings, including credentials. It applies
-to runs, goal planning, online validation, and affected-test selection. Cached
+to runs, online validation, and affected-test selection. Cached
 classifications are separated by provider and requested model. `sedum doctor`
 sends a small, potentially billable request to the selected model.
 
