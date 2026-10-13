@@ -111,6 +111,13 @@ export function stepStatus(step: ResultStep): string {
   return step.verdict ?? "measured";
 }
 
+/** One line per bug-detector finding on a step. */
+export function detectionTexts(step: ResultStep): string[] {
+  return (step.detections ?? []).map(
+    (detection) => `suspected bug: ${detection.check}: ${detection.message}`,
+  );
+}
+
 /** The steps every reporter calls out: failures, errors, interruptions, flags. */
 export function needsAttention(step: ResultStep): boolean {
   return (

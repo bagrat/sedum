@@ -391,6 +391,38 @@ export const fixtures = {
         attempts: [[step(cart, 1, "passed"), step(cart, 2, flag)]],
       },
     ]),
+  /** A passing test whose action step the bug detector flagged. */
+  suspectedBug: () =>
+    record("run-suspected-bug", [
+      {
+        file: cart,
+        description: "Cart saves the coupon",
+        attempts: [
+          [
+            step(cart, 1, "passed", {
+              kind: "action",
+              flags: ["suspected_bug"],
+              detections: [
+                {
+                  check: "http_error",
+                  message:
+                    "POST https://shop.test/api/coupon returned 500 Internal Server Error",
+                  url: "https://shop.test/api/coupon",
+                  status: 500,
+                },
+                {
+                  check: "uncaught_exception",
+                  message:
+                    "TypeError: Cannot read properties of null (reading 'code')",
+                  url: "https://shop.test/cart",
+                },
+              ],
+            }),
+            step(cart, 2, "passed"),
+          ],
+        ],
+      },
+    ]),
   failedVerify: () =>
     record("run-failed-verify", [
       {

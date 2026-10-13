@@ -217,6 +217,28 @@ Design references: TypeSafe's [Noul documentation](https://docs.typesafe.ai/prim
 [model limits](https://docs.typesafe.ai/models), and
 [known failure modes](https://docs.typesafe.ai/model-jaggedness/jev-1.13).
 
+### Detecting browser errors
+
+`--detect browser` flags steps whose page reported a problem that no claim checked. After each step settles, Sedum reads what the browser reported during that step:
+
+- `console_error`: a `console.error` call.
+- `uncaught_exception`: an exception no code caught.
+- `unhandled_rejection`: a rejected promise with no handler. A rejection that gains a handler moments later is dropped.
+- `http_error`: a 4xx or 5xx response, or a request that failed without one (status `0`), for every request the page makes: the document, `fetch`, XHR, scripts, and images. Aborted requests, such as those a navigation cuts off, are ignored.
+
+A finding never changes a step's verdict. The step gets the `suspected_bug` flag and lists each finding in `detections` with its message, URL without the query string, and status. Reporters show findings on the step that caused them. For example, a step that clicks Save while the save request returns 500 is flagged even though the page still says "Saved". A flagged pass exits 0 by default and 2 under `--strict`. Detection makes no model calls. It adds about 0.3 seconds per step while the page settles, and up to 1.5 seconds while requests are still in flight.
+
+`--detect-allow <rule>` ignores known noise and is repeatable. A rule is `check:pattern` or just `pattern`; the pattern is a substring of the finding's message or URL, or `re:` followed by a regular expression. Missing `/favicon.ico` files and `ResizeObserver loop` console errors are always ignored. `--detect off`, the default, turns detection off.
+
+```sh
+sedum run tests --detect browser
+sedum run tests --detect browser \
+  --detect-allow 'http_error:/api/session' \
+  --detect-allow 'console_error:re:^Warning:'
+```
+
+Signals that arrive before the first step, during the initial page load, are reported on the first step. Raw Playwright code in TypeScript tests is not a step, so signals it causes are reported on the next step.
+
 ### Parallel runs and sharding
 
 `--parallel <n|auto>` runs selected tests in up to `n` lanes at once (1 to 64). `auto` uses half the logical CPU cores, as Playwright Test does. The default is `1`, so behavior and provider cost only change when you ask. Each lane keeps one browser. Every attempt gets a fresh browser context, and a lane restarts its browser after a browser or operational error. A lane runs a test's retries before it takes the next test. The result lists tests in selection order, whatever order they finish in, and records each attempt's `lane`.

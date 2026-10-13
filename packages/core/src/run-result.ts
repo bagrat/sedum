@@ -7,9 +7,15 @@ const probability = z.number().finite().min(0).max(1);
 const nonnegative = z.number().finite().nonnegative();
 const count = z.number().int().nonnegative();
 const verdict = z.enum(["passed", "failed"]);
-const stepFlag = z.enum(["low_confidence", "contradiction"]);
+/** `suspected_bug`: the bug detector found a likely defect; it never fails a step. */
+const stepFlag = z.enum(["low_confidence", "contradiction", "suspected_bug"]);
 /** Attempts, tests and runs add `flaky`: a pass that needed a retry. */
-const flag = z.enum(["low_confidence", "contradiction", "flaky"]);
+const flag = z.enum([
+  "low_confidence",
+  "contradiction",
+  "suspected_bug",
+  "flaky",
+]);
 const state = z.enum(["running", "completed", "interrupted", "error"]);
 
 export const ResultSourceSchema = z.strictObject({
@@ -131,6 +137,18 @@ export const ResultJudgementSchema = z.strictObject({
   contradictionCutoff: probability.nullable(),
   judgedExcerpt: z.string().max(1512).nullable(),
 });
+export const ResultDetectionSchema = z.strictObject({
+  check: z.enum([
+    "console_error",
+    "uncaught_exception",
+    "unhandled_rejection",
+    "http_error",
+  ]),
+  message: z.string().max(512),
+  url: z.string().max(512).optional(),
+  /** HTTP status, or 0 for a request that failed without a response. */
+  status: z.number().int().min(0).max(599).optional(),
+});
 export const ResultStepSchema = z.strictObject({
   id: z.string().min(1),
   index: z.number().int().positive(),
@@ -156,6 +174,8 @@ export const ResultStepSchema = z.strictObject({
   state,
   verdict: verdict.nullable(),
   flags: z.array(stepFlag),
+  /** Bug-detector findings for the browser signals this step produced. */
+  detections: z.array(ResultDetectionSchema).max(50).optional(),
   elapsedMs: nonnegative,
   page: ResultPageSchema,
   locator: ResultLocatorSchema.nullable(),
@@ -286,6 +306,7 @@ export type ResultTest = z.infer<typeof ResultTestSchema>;
 export type ResultAttempt = z.infer<typeof ResultAttemptSchema>;
 export type ResultProblem = z.infer<typeof ResultProblemSchema>;
 export type ResultCall = z.infer<typeof ResultCallSchema>;
+export type ResultDetection = z.infer<typeof ResultDetectionSchema>;
 export type ResultPage = z.infer<typeof ResultPageSchema>;
 export type ResultFrame = z.infer<typeof ResultFrameSchema>;
 export type ResultExecution = z.infer<typeof ResultExecutionSchema>;
