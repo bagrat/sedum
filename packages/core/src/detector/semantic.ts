@@ -1,6 +1,13 @@
 import type { ProviderCall, ProviderCallOptions } from "../provider.js";
 import type { Detection, PageCheck } from "./checks.js";
 
+/** Code-point limits of an inspected page; the detector clips to them and providers enforce them. */
+export const INSPECTED_PAGE_LIMITS = {
+  path: 512,
+  title: 300,
+  text: 6000,
+} as const;
+
 /** What the model reads: visible text only, never pixels or markup. */
 export interface InspectedPage {
   /** URL path without query or fragment. */

@@ -1,10 +1,16 @@
 import { createHash } from "node:crypto";
 import type { BrowserPage } from "../browser-driver.js";
 import { visibleText } from "../page-bridge.js";
-import { isRunWideProviderError, type ProviderCall } from "../provider.js";
+import {
+  ProviderError,
+  isRunWideProviderError,
+  unknownCostCall,
+  type ProviderCall,
+} from "../provider.js";
 import { textDetections, type Detection } from "./checks.js";
 import {
   DEFAULT_SEMANTIC_THRESHOLDS,
+  INSPECTED_PAGE_LIMITS,
   semanticDetections,
   type InspectedPage,
   type PageInspection,
@@ -55,7 +61,6 @@ interface Collected {
 
 type Answer = { readonly inspection: PageInspection; readonly cached: boolean };
 
-const MODEL_TEXT_LIMIT = 6000;
 const POLL_MS = 250;
 const LOADING_ROUNDS = 3;
 export const NO_PAGE_FINDINGS: PageFindings = {
@@ -64,11 +69,19 @@ export const NO_PAGE_FINDINGS: PageFindings = {
   inspections: [],
 };
 
-function clipText(text: string): string {
+/** The model reads at most `limit` code points of each field. */
+function clip(text: string, limit: number): string {
   const points = Array.from(text);
-  return points.length > MODEL_TEXT_LIMIT
-    ? points.slice(0, MODEL_TEXT_LIMIT).join("")
-    : text;
+  return points.length > limit ? points.slice(0, limit).join("") : text;
+}
+
+/** A request that never left the client cost nothing; any other failure may have been billed. */
+function mayHaveBilled(error: unknown): boolean {
+  return (
+    !(error instanceof ProviderError) ||
+    error.failedCall !== undefined ||
+    error.attempts > 0
+  );
 }
 
 function pathOf(url: string): string {
@@ -198,6 +211,12 @@ export class PageChecks {
       return { inspection, cached: cached !== undefined };
     } catch (error) {
       this.cache.delete(state.key);
+      // Like the judge, keep a failed call on the receipt, with unknown cost.
+      if (!cached && mayHaveBilled(error))
+        collected.calls.push({
+          call: unknownCostCall(error),
+          apiMs: performance.now() - started,
+        });
       // A rejected key or exhausted rate limit would fail every later page too.
       if (isRunWideProviderError(error)) this.stopped = true;
       return null;
@@ -228,7 +247,12 @@ export class PageChecks {
     const key = createHash("sha256")
       .update(`${path}\u0000${title}\u0000${text}`)
       .digest("hex");
-    return { key, page: { path, title, text: clipText(text) }, fullText: text };
+    const inspected = {
+      path: clip(path, INSPECTED_PAGE_LIMITS.path),
+      title: clip(title, INSPECTED_PAGE_LIMITS.title),
+      text: clip(text, INSPECTED_PAGE_LIMITS.text),
+    };
+    return { key, page: inspected, fullText: text };
   }
 
   /** True the first time this page shows this state. */

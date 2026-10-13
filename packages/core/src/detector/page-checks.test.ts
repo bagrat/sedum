@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { BrowserPage } from "../browser-driver.js";
 import { ProviderError, type ProviderCall } from "../provider.js";
 import { BugDetector } from "./detector.js";
-import type { PageInspection, PageInspector } from "./semantic.js";
+import type {
+  InspectedPage,
+  PageInspection,
+  PageInspector,
+} from "./semantic.js";
+import type { BrowserSignal } from "./signals.js";
 
 // The page script is replaced by each fake page's current text.
 vi.mock("../page-bridge.js", () => ({
@@ -20,16 +25,31 @@ const call: ProviderCall = {
   totalCostUsd: 0.000042,
 };
 
-type FakePage = BrowserPage & { shown: string };
+type FakePage = BrowserPage & {
+  shown: string;
+  pending: BrowserSignal[];
+  settles: number;
+};
 
-function fakePage(shown: string): FakePage {
-  return {
+function fakePage(
+  shown: string,
+  { url = "https://shop.test/orders?token=secret", title = "Orders" } = {},
+): FakePage {
+  const page = {
     shown,
-    url: "https://shop.test/orders?token=secret",
+    pending: [] as BrowserSignal[],
+    settles: 0,
+    url,
     closed: false,
-    title: async () => "Orders",
-    signals: () => ({ settle: async () => undefined, drain: () => [] }),
-  } as unknown as FakePage;
+    title: async () => title,
+    signals: () => ({
+      settle: async () => {
+        page.settles++;
+      },
+      drain: () => page.pending.splice(0),
+    }),
+  };
+  return page as unknown as FakePage;
 }
 
 function answer(
@@ -54,7 +74,7 @@ function inspector(
   rules: [RegExp, Partial<PageInspection["probabilities"]>][],
 ) {
   return {
-    inspectPage: vi.fn(async ({ text }: { text: string }) =>
+    inspectPage: vi.fn(async ({ text }: InspectedPage) =>
       answer(rules.find(([pattern]) => pattern.test(text))?.[1] ?? {}),
     ),
   } satisfies PageInspector;
@@ -158,6 +178,87 @@ describe("semantic page checks", () => {
     ).toEqual([]);
     await detector.inspectStep(fakePage("Another page"));
     expect(model.inspectPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a failed call on the step's receipt with unknown cost", async () => {
+    const failing = (error: Error) => ({
+      inspectPage: vi.fn(async (): Promise<PageInspection> => {
+        throw error;
+      }),
+    });
+    const timedOut = await new BugDetector({
+      semantic: {
+        inspector: failing(new ProviderError("timeout", "slow", 2)),
+      },
+    }).inspectStep(fakePage("Orders"));
+    expect(timedOut.calls).toHaveLength(1);
+    expect(timedOut.calls[0]!.call).toMatchObject({
+      attempts: 2,
+      totalCostUsd: null,
+    });
+    // A billed reply that failed validation keeps its real usage and cost.
+    const invalid = await new BugDetector({
+      semantic: {
+        inspector: failing(
+          new ProviderError("invalid-response", "bad", 1, call),
+        ),
+      },
+    }).inspectStep(fakePage("Orders"));
+    expect(invalid.calls.map((c) => c.call)).toEqual([call]);
+    // A request rejected before it was sent cost nothing.
+    const unsent = await new BugDetector({
+      semantic: {
+        inspector: failing(new ProviderError("invalid-input", "too large")),
+      },
+    }).inspectStep(fakePage("Orders"));
+    expect(unsent.calls).toEqual([]);
+  });
+
+  it("reports signals raised during the stuck-loading wait on this step", async () => {
+    const model = inspector([[/Searching/u, { stuck_loading: 0.9 }]]);
+    const detector = new BugDetector({
+      semantic: { inspector: model, stuckMs: 600 },
+    });
+    const page = fakePage("Searching…");
+    setTimeout(
+      () =>
+        page.pending.push({
+          kind: "http_error",
+          message: "GET https://shop.test/api/search returned 504",
+          url: "https://shop.test/api/search",
+          status: 504,
+        }),
+      300,
+    );
+    const found = await detector.inspectStep(page);
+    expect(found.detections.map((d) => d.check)).toEqual([
+      "http_error",
+      "stuck_loading",
+    ]);
+    // Requests still in flight after the wait get a second settle.
+    expect(page.settles).toBe(2);
+  });
+
+  it("settles once when no loading wait ran", async () => {
+    const page = fakePage("Orders");
+    await new BugDetector({
+      semantic: { inspector: inspector([]) },
+    }).inspectStep(page);
+    expect(page.settles).toBe(1);
+  });
+
+  it("clips a long title and path to the request limits", async () => {
+    const model = inspector([]);
+    const detector = new BugDetector({ semantic: { inspector: model } });
+    await detector.inspectStep(
+      fakePage("Orders", {
+        url: `https://shop.test/${"p".repeat(600)}`,
+        title: "🛒".repeat(400),
+      }),
+    );
+    const sent = model.inspectPage.mock.calls[0]![0];
+    expect(Array.from(sent.title)).toHaveLength(300);
+    expect(Array.from(sent.path)).toHaveLength(512);
   });
 
   it("can require a minimum severity for model findings", async () => {

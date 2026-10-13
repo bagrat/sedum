@@ -68,11 +68,15 @@ export class BugDetector {
         );
         await source.settle({ maxMs: this.settleMs });
       }
-      const signals = source.drain().map(signalDetection);
       const found =
         this.pageChecks && !page.closed
           ? await this.pageChecks.inspect(page, options.signal)
           : NO_PAGE_FINDINGS;
+      // A stuck-loading wait can outlast requests the step started; let them land here.
+      if (found.inspections.some((state) => state.waited) && !page.closed)
+        await source.settle({ maxMs: this.settleMs });
+      // Drained last, so signals raised while Jev answered belong to this step.
+      const signals = source.drain().map(signalDetection);
       return {
         ...found,
         detections: this.reportable([...signals, ...found.detections]),
