@@ -81,7 +81,7 @@ const CASES: readonly DetectorCase[] = [
     expect: { load: ["http_error"] },
     title: "Products",
     body: PRODUCTS,
-    script: `fetch('http://127.0.0.1:9/telemetry').catch(()=>{})`,
+    script: `fetch('/detector/api/drop').catch(()=>{})`,
   },
   {
     id: "document-500",
@@ -177,6 +177,8 @@ export interface DetectorResponse {
   readonly contentType: string;
   readonly body: string;
   readonly location?: string;
+  /** Close the connection without a response, so the request fails at once on every OS. */
+  readonly drop?: boolean;
 }
 
 const API: Record<string, DetectorResponse> = {
@@ -200,6 +202,12 @@ const API: Record<string, DetectorResponse> = {
     contentType: "text/plain",
     body: "",
     location: "/detector/api/ok",
+  },
+  "/detector/api/drop": {
+    status: 0,
+    contentType: "text/plain",
+    body: "",
+    drop: true,
   },
 };
 
