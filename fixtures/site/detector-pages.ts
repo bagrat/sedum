@@ -61,6 +61,14 @@ const CASES: readonly DetectorCase[] = [
     script: `fetch('/detector/api/fail').catch(()=>{})`,
   },
   {
+    // A pre-signed-style URL longer than a finding's message limit.
+    id: "long-url-500",
+    expect: { load: ["http_error"] },
+    title: "Your orders",
+    body: ORDERS_TABLE,
+    script: `fetch('/detector/api/fail?token=fixture-secret&pad=${"x".repeat(500)}').catch(()=>{})`,
+  },
+  {
     id: "xhr-404",
     expect: { load: ["http_error"] },
     title: "Products",

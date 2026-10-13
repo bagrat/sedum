@@ -28,8 +28,10 @@ status and JUnit mapping, not the canonical verdict. A `suspected_bug` step,
 from `--detect browser`, lists its findings in `detections`: the `check`
 (`console_error`, `uncaught_exception`, `unhandled_rejection`, or
 `http_error`), a `message`, and, where known, the `url` without its query and
-the HTTP `status` (`0` for a request that failed without a response). On a
-`--sensitive-origin` page only the check and the origin are kept.
+the HTTP `status` (`0` for a request that failed without a response). Absolute URLs
+inside the message are reduced the same way, and a URL on a `--sensitive-origin`
+keeps only its origin. On a sensitive page only the check and the origin are
+kept.
 
 SIGINT and SIGTERM received while a run is active request cancellation. The CLI waits for the current operation to unwind, then writes `state: "interrupted"`, `verdict: null`, and a terminal `result.json` before exiting with the conventional signal exit code. Once the terminal outcome is committed, late signals are ignored while its final files are written so the process exit and persisted state cannot disagree. An interrupted provider request may have incurred unreported usage; its call is retained with unknown cost, so a receipt never presents that attempt as free.
 

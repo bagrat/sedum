@@ -229,6 +229,19 @@ describe.skipIf(process.env.SEDUM_BROWSER_INTEGRATION !== "1")(
       expect(result.totals.flaggedSteps).toBe(1);
     }, 60_000);
 
+    it("never reports the query of a long URL", async () => {
+      const { result } = await run("/detector/long-url-500", [
+        "verify the text #1042 is shown",
+      ]);
+      const [step] = result.tests[0]!.attempts[0]!.steps;
+      expect(step!.detections).toHaveLength(1);
+      const [detection] = step!.detections!;
+      expect(detection!.message).toBe(
+        `GET ${site.baseUrl}/detector/api/fail returned 500 Internal Server Error`,
+      );
+      expect(JSON.stringify(result)).not.toContain("fixture-secret");
+    }, 60_000);
+
     it("flags an uncaught exception on the click that threw, after a clean load", async () => {
       const { flow, result } = await run("/detector/click-exception", [
         "verify the text Canvas Backpack is shown",

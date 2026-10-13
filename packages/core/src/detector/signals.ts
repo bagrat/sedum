@@ -41,6 +41,8 @@ interface ExceptionDetails {
 }
 
 const MESSAGE_LIMIT = 400;
+/** Leaves room after the URL for the method, status, or error in an HTTP message. */
+const URL_LIMIT = 300;
 const BUFFER_LIMIT = 200;
 /** Chrome logs every failed resource load as a console error; the response is reported once, as http_error. */
 const RESOURCE_ECHO = /^Failed to load resource: /u;
@@ -50,6 +52,10 @@ function clip(text: string): string {
   return single.length > MESSAGE_LIMIT
     ? `${single.slice(0, MESSAGE_LIMIT - 1)}…`
     : single;
+}
+
+function clipUrl(url: string): string {
+  return url.length > URL_LIMIT ? `${url.slice(0, URL_LIMIT - 1)}…` : url;
 }
 
 function exceptionMessage(details: ExceptionDetails): string {
@@ -138,7 +144,7 @@ export class PageSignalCollector implements BrowserSignalSource {
     this.push({
       kind: "http_error",
       message: clip(
-        `${request.method()} ${response.url()} returned ${status} ${response.statusText()}`,
+        `${request.method()} ${clipUrl(response.url())} returned ${status} ${response.statusText()}`,
       ),
       url: response.url(),
       status,
@@ -153,7 +159,7 @@ export class PageSignalCollector implements BrowserSignalSource {
     this.push({
       kind: "http_error",
       message: clip(
-        `${request.method()} ${request.url()} failed: ${errorText}`,
+        `${request.method()} ${clipUrl(request.url())} failed: ${errorText}`,
       ),
       url: request.url(),
       status: 0,
