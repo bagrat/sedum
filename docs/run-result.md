@@ -27,7 +27,10 @@ executed tests are never a pass. A passed step with `low_confidence`,
 status and JUnit mapping, not the canonical verdict. A `suspected_bug` step,
 from `--detect browser`, lists its findings in `detections`: the `check`
 (`console_error`, `uncaught_exception`, `unhandled_rejection`, or
-`http_error`), a `message`, and, where known, the `url` without its query and
+`http_error`, or with `--detect semantic` `error_message`, `stuck_loading`,
+`empty_content`, or `broken_value`), a `message`, the page check's `source`
+(`text` for an exact leak, `model` for Jev) with Jev's `probability` and
+`severity` from 0 to 3, and, where known, the `url` without its query and
 the HTTP `status` (`0` for a request that failed without a response). Absolute URLs
 inside the message are reduced the same way, and a URL on a `--sensitive-origin`
 keeps only its origin. On a sensitive page only the check and the origin are

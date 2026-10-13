@@ -159,7 +159,7 @@ export async function executeSentence(
     const failed =
       (outcome === "failed" && !presentation.check) ||
       (typeof outcome === "object" && outcome.status === "failed");
-    const detections = await detectStep(
+    const { detections, calls: detectorCalls } = await detectStep(
       page,
       dependencies.detector,
       { privacy, sensitive },
@@ -210,6 +210,7 @@ export async function executeSentence(
       ...(facts.verify
         ? [resultCall(facts.verify.call, "judge", facts.verify.elapsedMs)]
         : []),
+      ...detectorCalls,
     ];
     const policy = facts.verify?.kind === "verify" ? facts.verify : null;
     const judgement = facts.verify

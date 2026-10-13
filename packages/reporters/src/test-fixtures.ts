@@ -416,6 +416,13 @@ export const fixtures = {
                     "TypeError: Cannot read properties of null (reading 'code')",
                   url: "https://shop.test/cart",
                 },
+                {
+                  check: "error_message",
+                  source: "model",
+                  message: "Page appears to show an error to the user",
+                  probability: 0.98,
+                  severity: 2.9,
+                },
               ],
             }),
             step(cart, 2, "passed"),

@@ -295,7 +295,7 @@ export async function runCli(
     )
     .option(
       "--detect <mode>",
-      "flag steps whose page reported console errors, uncaught exceptions, unhandled rejections, or HTTP errors: off or browser",
+      "flag steps whose page reported console errors, uncaught exceptions, unhandled rejections, or HTTP errors: off, browser, or semantic (also asks Jev whether each new page looks broken)",
       detectMode,
     )
     .option(
@@ -353,7 +353,7 @@ export async function runCli(
           replay: boolean;
           evidence: boolean;
           sensitiveOrigin: string[];
-          detect?: "off" | "browser";
+          detect?: "off" | "browser" | "semantic";
           detectAllow: string[];
           strict: boolean;
           costs: boolean;

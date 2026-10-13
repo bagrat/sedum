@@ -91,7 +91,7 @@ class AllowRuleCollector implements Collector<readonly string[]> {
   }
 }
 
-const DETECT_MODES = ["off", "browser"] as const;
+const DETECT_MODES = ["off", "browser", "semantic"] as const;
 export type DetectMode = (typeof DETECT_MODES)[number];
 
 class DetectModeParser implements ScalarParser<DetectMode> {
@@ -100,7 +100,7 @@ class DetectModeParser implements ScalarParser<DetectMode> {
     return (
       mode ??
       invalid(
-        `Unknown detector mode ${JSON.stringify(text.value)}. Use off or browser.`,
+        `Unknown detector mode ${JSON.stringify(text.value)}. Use off, browser, or semantic.`,
       )
     );
   }

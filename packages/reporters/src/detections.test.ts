@@ -19,6 +19,7 @@ describe("bug-detector findings in reports", () => {
     expect(detectionTexts(step)).toEqual([
       "suspected bug: http_error: POST https://shop.test/api/coupon returned 500 Internal Server Error",
       "suspected bug: uncaught_exception: TypeError: Cannot read properties of null (reading 'code')",
+      "suspected bug: error_message (model p=0.98, severity 2.9/3): Page appears to show an error to the user",
     ]);
   });
 
@@ -33,6 +34,7 @@ describe("bug-detector findings in reports", () => {
     });
     expect(junit).toContain("suspected_bug 1");
     expect(junit).toContain("suspected bug: uncaught_exception: TypeError");
+    expect(junit).toContain("suspected bug: error_message (model p=0.98");
     expect(renderHtml(result)).toContain(
       "suspected bug: http_error: POST https://shop.test/api/coupon",
     );

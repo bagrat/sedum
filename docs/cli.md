@@ -239,6 +239,19 @@ sedum run tests --detect browser \
 
 Signals that arrive before the first step, during the initial page load, are reported on the first step. Raw Playwright code in TypeScript tests is not a step, so signals it causes are reported on the next step.
 
+#### Experimental: `--detect semantic`
+
+`--detect semantic` adds page checks that need no browser signal. Each time a step leaves the page in a state the test has not seen, Sedum sends its path, title, and visible text to Jev in one System One call and asks four questions:
+
+- `error_message`: does the page show that the application failed, such as "Something went wrong", a stack trace, or an HTTP error page? Feedback about the user's own input, such as a wrong password, does not count.
+- `stuck_loading`: is the main content replaced by a spinner or "Loading…"? A loading answer counts only if the page stays unchanged for 3 seconds, so slow pages that finish are not flagged.
+- `empty_content`: does a heading, section, or table have nothing under it, with no "no results" message?
+- `broken_value`: does a value look unfilled, such as `Price: $`, a raw translation key, or `null, null`?
+
+It also asks for a severity from 0 (works) to 3 (blocking), shown with each finding. Exact leaks, such as `undefined`, `NaN`, `[object Object]`, `Invalid Date`, and `{{template}}`, are reported with the excerpt that contains them, but only when Jev agrees a value is broken: documentation prints those words on purpose. Findings carry `source` (`text` or `model`) and, from Jev, `probability` and `severity`.
+
+Answers are cached for the run by a hash of the page's path, title, and text, so a state seen in several tests is asked about once. Each call is about 1,000 input tokens (about $0.00004 at the checked-in Jev rate) and appears in the step's calls with purpose `detector`. Semantic mode needs a System One provider, TypeSafe or OpenRouter; with Clef the run stops with `detect_unsupported` before any test starts. Jev's probabilities are not calibrated: the thresholds come from the labelled pages in [the bug detector evaluation](https://github.com/sedum-dev/sedum/blob/main/evals/bug-detector.md), which also lists its limits. Allow rules apply to page checks too, for example `--detect-allow 'empty_content:Page appears empty'`.
+
 ### Parallel runs and sharding
 
 `--parallel <n|auto>` runs selected tests in up to `n` lanes at once (1 to 64). `auto` uses half the logical CPU cores, as Playwright Test does. The default is `1`, so behavior and provider cost only change when you ask. Each lane keeps one browser. Every attempt gets a fresh browser context, and a lane restarts its browser after a browser or operational error. A lane runs a test's retries before it takes the next test. The result lists tests in selection order, whatever order they finish in, and records each attempt's `lane`.

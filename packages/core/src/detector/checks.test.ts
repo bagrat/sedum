@@ -4,6 +4,7 @@ import {
   allowed,
   parseAllowRule,
   signalDetection,
+  textDetections,
   uniqueDetections,
   type Detection,
 } from "./checks.js";
@@ -57,6 +58,39 @@ describe("allow rules", () => {
     const rules = DEFAULT_ALLOW.map(parseAllowRule);
     expect(allowed(http("https://a.test/favicon.ico"), rules)).toBe(true);
     expect(allowed(http("https://a.test/logo.png"), rules)).toBe(false);
+  });
+});
+
+describe("exact text leaks", () => {
+  it.each([
+    ["Hello, undefined!", "undefined"],
+    ["Total: $NaN", "NaN"],
+    ["Ship to: [object Object]", "[object Object]"],
+    ["Placed on Invalid Date", "Invalid Date"],
+    ["Welcome back, {{user.firstName}}", "template"],
+    ["Price ${item.price}", "template"],
+  ])("finds %j", (text, label) => {
+    const found = textDetections(text);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ check: "broken_value", source: "text" });
+    expect(found[0]!.message).toContain(label);
+  });
+
+  it.each([
+    "Grandma Nan's Bakery",
+    "Undefined-hours holidays",
+    "an undefinedValue in code",
+    "Use {{ }} braces",
+    "Products Canvas Backpack $29.00",
+  ])("ignores %j", (text) => {
+    expect(textDetections(text)).toEqual([]);
+  });
+
+  it("quotes a bounded excerpt around the match", () => {
+    const text = `${"a".repeat(200)} undefined ${"b".repeat(200)}`;
+    const [found] = textDetections(text);
+    expect(found!.message.length).toBeLessThan(140);
+    expect(found!.message).toMatch(/…a+ undefined b+…/u);
   });
 });
 

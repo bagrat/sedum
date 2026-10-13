@@ -6,7 +6,8 @@ describe("--detect and --detect-allow", () => {
   it("accepts the detector modes", () => {
     expect(detectMode("browser")).toBe("browser");
     expect(detectMode(" off ")).toBe("off");
-    expect(() => detectMode("semantic")).toThrow(InvalidArgumentError);
+    expect(detectMode("semantic")).toBe("semantic");
+    expect(() => detectMode("all")).toThrow(InvalidArgumentError);
   });
 
   it("collects allow rules and rejects an invalid regular expression", () => {

@@ -58,7 +58,13 @@ export const ResultFrameSchema = z.discriminatedUnion("status", [
 export const ResultCallSchema = z.strictObject({
   provider: z.string().trim().min(1).max(120).optional(),
   modality: z.literal("vision").optional(),
-  purpose: z.enum(["classification", "locator", "judge", "planner"]),
+  purpose: z.enum([
+    "classification",
+    "locator",
+    "judge",
+    "planner",
+    "detector",
+  ]),
   requestedModel: z.string().max(120),
   model: z.string().max(120),
   attempts: count,
@@ -143,11 +149,20 @@ export const ResultDetectionSchema = z.strictObject({
     "uncaught_exception",
     "unhandled_rejection",
     "http_error",
+    "error_message",
+    "stuck_loading",
+    "empty_content",
+    "broken_value",
   ]),
   message: z.string().max(512),
   url: z.string().max(512).optional(),
   /** HTTP status, or 0 for a request that failed without a response. */
   status: z.number().int().min(0).max(599).optional(),
+  /** A page check's evidence: an exact string in the page text, or Jev. */
+  source: z.enum(["text", "model"]).optional(),
+  probability: probability.optional(),
+  /** Jev's expected severity from 0 (works) to 3 (blocking). */
+  severity: z.number().finite().min(0).max(3).optional(),
 });
 export const ResultStepSchema = z.strictObject({
   id: z.string().min(1),
@@ -174,7 +189,7 @@ export const ResultStepSchema = z.strictObject({
   state,
   verdict: verdict.nullable(),
   flags: z.array(stepFlag),
-  /** Bug-detector findings for the browser signals this step produced. */
+  /** Bug-detector findings for the signals and page state this step produced. */
   detections: z.array(ResultDetectionSchema).max(50).optional(),
   elapsedMs: nonnegative,
   page: ResultPageSchema,

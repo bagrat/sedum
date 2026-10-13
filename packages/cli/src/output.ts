@@ -201,7 +201,7 @@ function cacheLine(step: ResultStep): string | null {
 
 function detectionLines(step: ResultStep): string[] {
   return (step.detections ?? []).map((detection) =>
-    `  step ${step.index}: suspected bug, ${detection.check}: ${detection.message}`.replace(
+    `  step ${step.index}: suspected bug, ${detection.check}${detection.source ? ` (${detection.source}${detection.probability === undefined ? "" : ` p=${detection.probability.toFixed(2)}`})` : ""}: ${detection.message}`.replace(
       // Page text and URLs must not move the terminal cursor.
       // eslint-disable-next-line no-control-regex
       /[\u0000-\u001f\u007f-\u009f]/g,

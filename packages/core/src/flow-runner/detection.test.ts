@@ -17,11 +17,13 @@ const found = [
     message: "Payment failed for card 4242",
   },
 ];
-const detector = { inspectStep: async () => found } as unknown as BugDetector;
+const detector = {
+  inspectStep: async () => ({ detections: found, calls: [], inspections: [] }),
+} as unknown as BugDetector;
 const page = {} as BrowserPage;
 
 it("reports URLs without their query and redacts secrets", async () => {
-  const detections = await detectStep(page, detector, {
+  const { detections } = await detectStep(page, detector, {
     privacy: { secretValues: ["4242"], sensitiveOrigins: [] },
     sensitive: false,
   });
@@ -45,13 +47,17 @@ const reported = async (message: string, url?: string) =>
     await detectStep(
       page,
       {
-        inspectStep: async () => [
-          { check: "http_error", message, ...(url ? { url } : {}) },
-        ],
+        inspectStep: async () => ({
+          detections: [
+            { check: "http_error", message, ...(url ? { url } : {}) },
+          ],
+          calls: [],
+          inspections: [],
+        }),
       } as unknown as BugDetector,
       { privacy: { ...privacy, secretValues: [] }, sensitive: false },
     )
-  )[0]!;
+  ).detections[0]!;
 
 it("strips the query from a URL the collector clipped", async () => {
   const url = `https://bucket.test/report.pdf?X-Amz-Credential=AKIAEXAMPLE&X-Amz-Signature=${"f".repeat(400)}`;
@@ -125,7 +131,7 @@ it("drops a URL nested in another URL's query with that query", async () => {
 });
 
 it("keeps only the check on a sensitive page", async () => {
-  const detections = await detectStep(page, detector, {
+  const { detections } = await detectStep(page, detector, {
     privacy: { secretValues: [], sensitiveOrigins: ["https://shop.test"] },
     sensitive: true,
   });
@@ -141,7 +147,7 @@ it("does nothing without a detector", async () => {
       privacy: { secretValues: [], sensitiveOrigins: [] },
       sensitive: false,
     }),
-  ).toEqual([]);
+  ).toEqual({ detections: [], calls: [] });
 });
 
 // Properties of the URL reduction in messages. URLs are built with `new URL`,

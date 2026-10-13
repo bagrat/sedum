@@ -59,7 +59,7 @@ describe("BugDetector", () => {
         status: 500,
       },
     ]);
-    expect(await detector.inspectStep(page)).toEqual([
+    expect((await detector.inspectStep(page)).detections).toEqual([
       { check: "console_error", message: "boom" },
       {
         check: "http_error",
@@ -68,7 +68,7 @@ describe("BugDetector", () => {
         status: 500,
       },
     ]);
-    expect(await detector.inspectStep(page)).toEqual([]);
+    expect((await detector.inspectStep(page)).detections).toEqual([]);
   });
 
   it("waits for in-flight requests before reading a step's signals", async () => {
@@ -80,14 +80,16 @@ describe("BugDetector", () => {
   it("drains a closed page without waiting", async () => {
     const page = fakePage([consoleError]);
     Object.assign(page, { closed: true });
-    expect(await new BugDetector().inspectStep(page)).toHaveLength(1);
+    expect((await new BugDetector().inspectStep(page)).detections).toHaveLength(
+      1,
+    );
     expect(page.settled).toEqual([]);
   });
 
   it("finds nothing on a page opened without signal collection", async () => {
     const page = fakePage([consoleError]);
     page.signals = () => null;
-    expect(await new BugDetector().inspectStep(page)).toEqual([]);
+    expect((await new BugDetector().inspectStep(page)).detections).toEqual([]);
   });
 
   it("does no work once the run is interrupted", async () => {
@@ -95,7 +97,8 @@ describe("BugDetector", () => {
     controller.abort();
     const page = fakePage([consoleError]);
     expect(
-      await new BugDetector().inspectStep(page, { signal: controller.signal }),
+      (await new BugDetector().inspectStep(page, { signal: controller.signal }))
+        .detections,
     ).toEqual([]);
     expect(page.pending).toHaveLength(1);
   });
@@ -105,6 +108,10 @@ describe("BugDetector", () => {
     page.signals = () => {
       throw new Error("driver gone");
     };
-    await expect(new BugDetector().inspectStep(page)).resolves.toEqual([]);
+    await expect(new BugDetector().inspectStep(page)).resolves.toEqual({
+      detections: [],
+      calls: [],
+      inspections: [],
+    });
   });
 });

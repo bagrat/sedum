@@ -162,9 +162,10 @@ async function createExecutionResources(
   gate: ProviderGate,
 ): Promise<ExecutionResources> {
   const { config, options } = request;
-  const detector = createDetector(options);
+  const provider = await createCliProvider(config, { gate });
+  const detector = createDetector(options, provider, config.providerName);
   return {
-    provider: await createCliProvider(config, { gate }),
+    provider,
     ...(detector ? { detector } : {}),
     classificationCache: await FileClassificationCache.load(
       path.join(config.projectRoot, ".sedum", "classifications.json"),

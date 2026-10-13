@@ -2,7 +2,14 @@ import type { BrowserPage } from "../browser-driver.js";
 import type { Detection } from "../detector/checks.js";
 import type { BugDetector } from "../detector/detector.js";
 import { safeText, safeUrl, type ReportPrivacy } from "../report-privacy.js";
-import type { ResultDetection } from "../run-result.js";
+import type { ResultCall, ResultDetection } from "../run-result.js";
+import { resultCall } from "./support.js";
+
+export interface StepDetections {
+  readonly detections: readonly ResultDetection[];
+  /** Jev calls `--detect semantic` made for this step's page. */
+  readonly calls: readonly ResultCall[];
+}
 
 const STEP_LIMIT = 50;
 const SENSITIVE = "Details omitted on a sensitive page.";
@@ -92,18 +99,23 @@ function reportDetection(
   };
 }
 
-/** @internal Run the bug detector for the signals a step produced. */
+/** @internal Run the bug detector for the state a step left behind. */
 export async function detectStep(
   page: BrowserPage,
   detector: BugDetector | undefined,
   report: { readonly privacy: ReportPrivacy; readonly sensitive: boolean },
   signal?: AbortSignal,
-): Promise<readonly ResultDetection[]> {
-  if (!detector) return [];
+): Promise<StepDetections> {
+  if (!detector) return { detections: [], calls: [] };
   const found = await detector.inspectStep(page, signal ? { signal } : {});
-  return found
-    .slice(0, STEP_LIMIT)
-    .map((detection) =>
-      reportDetection(detection, report.privacy, report.sensitive),
-    );
+  return {
+    detections: found.detections
+      .slice(0, STEP_LIMIT)
+      .map((detection) =>
+        reportDetection(detection, report.privacy, report.sensitive),
+      ),
+    calls: found.calls.map(({ call, apiMs }) =>
+      resultCall(call, "detector", apiMs),
+    ),
+  };
 }

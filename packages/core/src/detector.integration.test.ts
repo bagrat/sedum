@@ -13,6 +13,7 @@ import {
 import { PlaywrightBrowserDriver } from "./browser-driver.js";
 import { NoopClassificationCache } from "./classification-cache.js";
 import { BugDetector } from "./detector/detector.js";
+import type { PageInspection } from "./detector/semantic.js";
 import { runFlow } from "./flow-runner.js";
 import type {
   JudgeDecision,
@@ -65,6 +66,27 @@ async function holds(
   const found = digest.text.includes(fragment);
   return { holds: found ? 0.97 : 0.03, contradicted: found ? 0 : 0.9, call };
 }
+
+/** A stand-in for Jev: an error message is "internal error" text. */
+const inspector = {
+  inspectPage: async ({ text }: { text: string }): Promise<PageInspection> => ({
+    probabilities: {
+      error_message: /internal error/u.test(text) ? 0.98 : 0.02,
+      stuck_loading: 0.02,
+      empty_content: 0.05,
+      broken_value: 0.05,
+    },
+    severity: { score: 2.9, confidence: 0.9, probabilities: [] },
+    call: { ...call, usage: { inputTokens: 1000, outputTokens: 0 } },
+  }),
+};
+
+const BROWSER_CHECKS = new Set([
+  "console_error",
+  "uncaught_exception",
+  "unhandled_rejection",
+  "http_error",
+]);
 
 describe.skipIf(process.env.SEDUM_BROWSER_INTEGRATION !== "1")(
   "bug detector in a browser",
@@ -138,13 +160,16 @@ describe.skipIf(process.env.SEDUM_BROWSER_INTEGRATION !== "1")(
       ]);
     }, 30_000);
 
-    it("raises exactly the labelled checks on every fixture case", async () => {
+    it("raises exactly the labelled browser checks on every fixture case", async () => {
       const session = await new PlaywrightBrowserDriver().launch({
         browser: "chromium",
       });
       const detector = new BugDetector({ allow: DETECTOR_ALLOW });
       const checks = (found: readonly { check: string }[]) =>
         [...new Set(found.map((detection) => detection.check))].sort();
+      // Page checks need Jev; scripts/detector-eval.ts measures those.
+      const browserOnly = (labels: readonly string[]) =>
+        labels.filter((label) => BROWSER_CHECKS.has(label)).sort();
       try {
         for (const item of DETECTOR_CASES) {
           const context = await session.newContext({ collectSignals: true });
@@ -154,16 +179,16 @@ describe.skipIf(process.env.SEDUM_BROWSER_INTEGRATION !== "1")(
             url: new RuntimeUrl([`${site.baseUrl}/detector/${item.id}`]),
           });
           const seen: Record<string, string[]> = {
-            load: checks(await detector.inspectStep(page)),
+            load: checks((await detector.inspectStep(page)).detections),
           };
           if (item.expect.action) {
             await page.playwright!().page.click("#act");
-            seen.action = checks(await detector.inspectStep(page));
+            seen.action = checks((await detector.inspectStep(page)).detections);
           }
           expect(seen, item.id).toEqual({
-            load: [...item.expect.load].sort(),
+            load: browserOnly(item.expect.load),
             ...(item.expect.action
-              ? { action: [...item.expect.action].sort() }
+              ? { action: browserOnly(item.expect.action) }
               : {}),
           });
           await context.close();
@@ -173,7 +198,11 @@ describe.skipIf(process.env.SEDUM_BROWSER_INTEGRATION !== "1")(
       }
     }, 120_000);
 
-    async function run(route: string, steps: readonly string[]) {
+    async function run(
+      route: string,
+      steps: readonly string[],
+      detector = new BugDetector(),
+    ) {
       const file = path.join(root, `${route.replaceAll("/", "-")}.test.yaml`);
       await writeFile(
         file,
@@ -187,7 +216,7 @@ describe.skipIf(process.env.SEDUM_BROWSER_INTEGRATION !== "1")(
         browserKind: "chromium",
         classificationCache: new NoopClassificationCache(),
         provider: { classifyBatch: vi.fn(), choose, holds },
-        detector: new BugDetector(),
+        detector,
         env: {},
         report: {
           recorder,
@@ -240,6 +269,30 @@ describe.skipIf(process.env.SEDUM_BROWSER_INTEGRATION !== "1")(
         `GET ${site.baseUrl}/detector/api/fail returned 500 Internal Server Error`,
       );
       expect(JSON.stringify(result)).not.toContain("fixture-secret");
+    }, 60_000);
+
+    it("records a Jev finding and its call on the step that showed the error", async () => {
+      const { flow, result } = await run(
+        "/detector/error-after-pay",
+        ["click the Pay now button"],
+        new BugDetector({ semantic: { inspector } }),
+      );
+      expect(flow.status, JSON.stringify(flow)).toBe("passed");
+      const [pay] = result.tests[0]!.attempts[0]!.steps;
+      expect(pay).toMatchObject({
+        flags: ["suspected_bug"],
+        detections: [
+          {
+            check: "error_message",
+            source: "model",
+            probability: 0.98,
+            severity: 2.9,
+          },
+        ],
+      });
+      expect(pay!.calls.filter((c) => c.purpose === "detector")).toHaveLength(
+        1,
+      );
     }, 60_000);
 
     it("flags an uncaught exception on the click that threw, after a clean load", async () => {
