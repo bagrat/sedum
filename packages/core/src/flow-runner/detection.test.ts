@@ -208,11 +208,15 @@ async function reportMessage(
   const reported = await detectStep(
     page,
     {
-      inspectStep: async () => [{ check: "console_error", message }],
+      inspectStep: async () => ({
+        detections: [{ check: "console_error", message }],
+        calls: [],
+        inspections: [],
+      }),
     } as unknown as BugDetector,
     { privacy: { secretValues: [], sensitiveOrigins }, sensitive: false },
   );
-  return reported[0]!.message;
+  return reported.detections[0]!.message;
 }
 
 propertyTest(
