@@ -40,6 +40,8 @@ import {
   collectOrigin,
   collectReporter,
   collectValue,
+  collectAllowRule,
+  detectMode,
   commandHelp,
   nonnegativeInteger,
   nonnegativeSlow,
@@ -291,6 +293,17 @@ export async function runCli(
       collectOrigin,
       [],
     )
+    .option(
+      "--detect <mode>",
+      "flag steps whose page reported console errors, uncaught exceptions, unhandled rejections, or HTTP errors: off, browser, or semantic (also asks Jev whether each new page looks broken)",
+      detectMode,
+    )
+    .option(
+      "--detect-allow <rule>",
+      "ignore a known detector finding: [check:]substring or [check:]re:regex (repeatable)",
+      collectAllowRule,
+      [],
+    )
     .option("--strict", "exit 2 when a passed run has uncertainty flags", false)
     .option(
       "--reporter <name>",
@@ -340,6 +353,8 @@ export async function runCli(
           replay: boolean;
           evidence: boolean;
           sensitiveOrigin: string[];
+          detect?: "off" | "browser" | "semantic";
+          detectAllow: string[];
           strict: boolean;
           costs: boolean;
           locatorCache: boolean;
@@ -510,6 +525,8 @@ export async function runCli(
           ...(options.reporterDir ? { reporterDir: options.reporterDir } : {}),
           reporters: options.reporter,
           strict: options.strict,
+          ...(options.detect ? { detect: options.detect } : {}),
+          detectAllow: options.detectAllow,
           headed: options.headed,
           ...(options.slow !== undefined ? { slowMoMs: options.slow } : {}),
           retries: options.retries,
