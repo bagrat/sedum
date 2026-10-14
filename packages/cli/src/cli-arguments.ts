@@ -106,6 +106,38 @@ class DetectModeParser implements ScalarParser<DetectMode> {
   }
 }
 
+/** `sedum explore --detect`: browser signals are always on there. */
+export const EXPLORE_DETECT_MODES = ["browser", "semantic"] as const;
+export type ExploreDetect = (typeof EXPLORE_DETECT_MODES)[number];
+
+class ExploreDetectParser implements ScalarParser<ExploreDetect> {
+  parse(text: RawOptionText): ExploreDetect {
+    const mode = EXPLORE_DETECT_MODES.find((item) => item === text.trimmed);
+    return (
+      mode ??
+      invalid(
+        `Unknown detector mode ${JSON.stringify(text.value)}. Use browser or semantic.`,
+      )
+    );
+  }
+}
+
+/** `sedum explore --safe [mode]`: on (Jev's judgement) or strict (plus keywords). */
+export const EXPLORE_SAFE_MODES = ["on", "strict"] as const;
+export type ExploreSafeMode = (typeof EXPLORE_SAFE_MODES)[number];
+
+class ExploreSafeParser implements ScalarParser<ExploreSafeMode> {
+  parse(text: RawOptionText): ExploreSafeMode {
+    const mode = EXPLORE_SAFE_MODES.find((item) => item === text.trimmed);
+    return (
+      mode ??
+      invalid(
+        `Unknown safety mode ${JSON.stringify(text.value)}. Use --safe or --safe strict.`,
+      )
+    );
+  }
+}
+
 const REPORTERS = ["list", "steps", "terminal", "json", "markdown", "junit"];
 
 class ReporterCollector implements Collector<readonly string[]> {
@@ -198,6 +230,8 @@ export const collectOrigin = collector(new OriginCollector());
 export const collectValue = collector(new ValueCollector());
 export const collectAllowRule = collector(new AllowRuleCollector());
 export const detectMode = scalar(new DetectModeParser());
+export const exploreDetect = scalar(new ExploreDetectParser());
+export const exploreSafe = scalar(new ExploreSafeParser());
 /** `--reporter` is repeatable and also takes a comma list, e.g. junit,markdown. */
 export const collectReporter = collector(new ReporterCollector());
 export const collectGlob = collector(new GlobCollector());

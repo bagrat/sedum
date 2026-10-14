@@ -22,6 +22,14 @@ import type { RunCommandExecution, RunCommandOptions } from "./run-command.js";
 import type { RelevanceProviderFactory } from "./affected-selection.js";
 import type { DoctorProbes } from "./doctor-command.js";
 import {
+  exploreMode,
+  seedValue,
+  startUrl,
+  watchOrigin,
+  collectText,
+  type ExploreFlags,
+} from "./explore-command.js";
+import {
   createSelectedClassifier,
   executeValidateCommand,
   type ClassificationProviderFactory,
@@ -41,6 +49,8 @@ import {
   collectReporter,
   collectValue,
   collectAllowRule,
+  exploreDetect,
+  exploreSafe,
   detectMode,
   commandHelp,
   nonnegativeInteger,
@@ -611,6 +621,106 @@ export async function runCli(
         exitCode = runExitCode(execution.result, options.strict);
       },
     );
+
+  program
+    .command("explore")
+    .description(
+      "explore a site by a seeded random walk guided by Jev (experimental)",
+    )
+    .argument(
+      "[url]",
+      "absolute start URL; the walk stays on its origin",
+      startUrl,
+    )
+    .option("--steps <count>", "actions to take", positiveCount(10_000), 100)
+    .option(
+      "--seed <seed>",
+      "seed for a reproducible walk (default: random)",
+      seedValue,
+    )
+    .option(
+      "--mode <mode>",
+      "guided (Jev), heuristic (no model) or random (blind walk)",
+      exploreMode,
+      "guided",
+    )
+    .option(
+      "--out <dir>",
+      "directory for traces and emitted tests",
+      ".sedum/explore",
+    )
+    .option(
+      "--shrink",
+      "shrink each failure and write it as a plain-English test",
+      false,
+    )
+    .option(
+      "--rerun <trace>",
+      "run a recorded trace.jsonl again instead of exploring",
+    )
+    .option(
+      "--replay",
+      "capture a frame per step and embed them in report.html",
+      false,
+    )
+    .option(
+      "--sensitive-origin <url>",
+      "capture no frames on this origin (repeatable)",
+      collectOrigin,
+      [],
+    )
+    .option(
+      "--safe [mode]",
+      "skip targets Jev judges destructive and leave settings forms alone; strict also skips names like delete, send or pay. Off by default: only log-out and account-closing targets are skipped",
+      exploreSafe,
+    )
+    .option(
+      "--watch-origin <origin>",
+      "also report HTTP 5xx from this origin, such as an API host (repeatable)",
+      watchOrigin,
+      [],
+    )
+    .option(
+      "--ignore-console <regex>",
+      "ignore console errors matching this regular expression (repeatable)",
+      collectText,
+      [],
+    )
+    .option(
+      "--detect <mode>",
+      "browser (console errors, exceptions, rejections, failed requests; always on) or semantic (also asks Jev whether each new page looks broken, in the same call; guided mode)",
+      exploreDetect,
+      "browser",
+    )
+    .option(
+      "--detect-allow <rule>",
+      "ignore a known finding: [check:]substring or [check:]re:regex (repeatable)",
+      collectAllowRule,
+      [],
+    )
+    .option(
+      "--cookies <storage-state.json>",
+      "sign the browser in with the cookies of a Playwright storage-state file",
+    )
+    .option(
+      "--rejected-submits",
+      "also report a 4xx answer to a form submission: the UI let you send something the server refuses",
+      false,
+    )
+    .option("--headed", "show the browser", false)
+    .addHelpText(
+      "after",
+      "\nGuided mode and --shrink make billable TypeSafe calls (TYPESAFE_API_KEY).\nSafety is off by default, for disposable staging: exploration clicks real buttons\nand completes forms. Use --safe on shared or production-like data.\n\nWrites trace.jsonl, result.json, report.md and report.html into --out/<run-id>/.\n\nExamples:\n  sedum explore https://staging.example.com --steps 200 --seed 7 --replay\n  sedum explore https://staging.example.com --safe --shrink\n  sedum explore --rerun .sedum/explore/<run>/trace.jsonl\n\nExit codes:\n  0 no failures observed\n  1 console errors, page exceptions or HTTP 5xx observed\n  3 command or operational error\n",
+    )
+    .action(async (url: string | undefined, options: ExploreFlags) => {
+      const { exploreAction } = await import("./explore-command.js");
+      exitCode = await exploreAction(url, options, {
+        cwd,
+        write: writeOut,
+        writeErr,
+        ...(runtime.signal ? { signal: runtime.signal } : {}),
+      });
+    });
 
   const cache = program
     .command("cache")

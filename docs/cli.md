@@ -315,6 +315,27 @@ Frames are stored per attempt as `evidence/<attempt-key>/<frame>.jpg` inside the
 
 The HTML report includes light and dark themes, failure and flagged-flow filters, per-assertion scores and decision lines, all retry attempts, and a receipt from the recorded model calls. A missing cost is shown as unknown rather than zero. `--replay` captures step frames and embeds them in `report.html`; without it the report contains no frame bytes. Captured frames can contain private page pixels, so use `--sensitive-origin` or omit replay on sensitive pages. Frames show the visible page, while assertion grades come from the recorded judgement and judged page excerpt. The file contains its own styles, fonts, scripts, and optional frames and makes no network requests.
 
+## `sedum explore` (experimental)
+
+`sedum explore <url>` explores a site by a seeded random walk guided by Jev.
+It reports what `--detect browser` reports (console errors, uncaught
+exceptions, unhandled rejections, failed requests), plus HTTP 5xx responses
+and broken links. `--detect semantic` also asks the detector's page checks in
+the walk's existing Jev call for each new page, and `--detect-allow <rule>`
+ignores known findings.
+
+Safety is off by default, for disposable staging; the walk only refuses to
+log itself out. `--safe` skips what Jev judges destructive and leaves
+settings forms alone; `--safe strict` also skips names like delete, send or
+pay.
+
+Each run writes `trace.jsonl`, `result.json`, `report.md` and `report.html`
+into `--out/<run-id>/`. `--replay` adds a frame per step to the HTML report
+(`--sensitive-origin` turns frames off for an origin), and `--shrink` writes
+each failure as a plain-English test. `--rerun <trace>` runs a recorded
+trace again. Use `--steps`, `--seed` and `--mode guided|heuristic|random`.
+See [Exploration mode](explore-mode.md).
+
 ## `sedum validate`
 
 `sedum validate [paths...]` checks tests and modules without opening a browser, without a model key, and without spending tokens. That makes it cheap enough for a pre-commit hook and for every CI run.

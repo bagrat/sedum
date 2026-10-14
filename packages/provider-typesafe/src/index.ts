@@ -24,6 +24,11 @@ import type {
 } from "@sedum-dev/core";
 import {
   MODEL_CHOICES,
+  type ExplorationAdvisor,
+  type ExploreAdvice,
+  type ExploreAdviceRequest,
+  type ExploreDecision,
+  type ExploreDecisionRequest,
   type GoalState,
   type GoalDecision,
   type GoalValueState,
@@ -40,15 +45,24 @@ import {
   validateCall,
   validateChoice,
   validateNoul,
-  validateScore,
   type CallMeta,
 } from "./validation.js";
-import { INSPECT_KEYS, buildInspectRequest } from "./inspect-request.js";
+import {
+  INSPECT_KEYS,
+  buildInspectRequest,
+  inspectionOf,
+} from "./inspect-request.js";
 import { buildRelevanceRequests, type RelevanceTest } from "./relevance.js";
 export type { RelevanceTest } from "./relevance.js";
 import { ProviderGate } from "./gate.js";
 import { askProvider } from "./request-lifecycle.js";
 import { buildGoalRequest, validateGoalDecision } from "./goal-request.js";
+import {
+  buildDecisionRequest,
+  buildExploreRequest,
+  validateDecision,
+  validateExploreAdvice,
+} from "./explore-request.js";
 
 const BASE_URL = "https://api.typesafe.ai";
 const DEFAULT_DEADLINE_MS = 30_000;
@@ -184,6 +198,7 @@ export class TypeSafeAdapter
     Judge,
     ClassificationProvider,
     RelevanceProvider,
+    ExplorationAdvisor,
     PageInspector
 {
   private readonly client: TypeSafeClient;
@@ -308,6 +323,44 @@ export class TypeSafeAdapter
     }
   }
 
+  /** Exploration fan-out: page kind plus per-target safety and destination. */
+  async assess(
+    input: ExploreAdviceRequest,
+    options?: ProviderCallOptions,
+  ): Promise<ExploreAdvice> {
+    const { request, targetIds } = buildExploreRequest(input, this.model);
+    return this.answered(request, options, (response) =>
+      validateExploreAdvice(input, targetIds, response),
+    );
+  }
+
+  /** Closed choices about one form or dropdown, in one call. */
+  async decide(
+    input: ExploreDecisionRequest,
+    options?: ProviderCallOptions,
+  ): Promise<ExploreDecision> {
+    return this.answered(
+      buildDecisionRequest(input, this.model),
+      { ...options, maxAttempts: 1 },
+      (response) => validateDecision(input, response),
+    );
+  }
+
+  /** Ask, then validate the answers; an invalid answer still reports its call. */
+  private async answered<T extends object>(
+    request: SystemOneRequest,
+    options: ProviderCallOptions | undefined,
+    validate: (response: unknown) => T,
+  ) {
+    const { response, meta } = await this.ask(request, options);
+    const call = validateCall(response, meta, this.model, this.estimateJevCost);
+    try {
+      return { ...validate(response), call };
+    } catch (error) {
+      throw responseError(error, call.attempts, call);
+    }
+  }
+
   /** Speculative operation-specific targets, inspired by jev-ultrafast choose(). */
   async chooseGoal(
     state: GoalState,
@@ -412,16 +465,7 @@ export class TypeSafeAdapter
         INSPECT_KEYS,
         "Inspection answer keys do not match the questions.",
       );
-      return {
-        probabilities: {
-          error_message: validateNoul(answers.error_message),
-          stuck_loading: validateNoul(answers.stuck_loading),
-          empty_content: validateNoul(answers.empty_content),
-          broken_value: validateNoul(answers.broken_value),
-        },
-        severity: validateScore(answers.severity, 4),
-        call,
-      };
+      return { ...inspectionOf(answers), call };
     } catch (error) {
       throw responseError(error, call.attempts, call);
     }
