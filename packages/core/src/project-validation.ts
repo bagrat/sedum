@@ -6,13 +6,7 @@ import {
   classifySentenceSteps,
   type ClassifyFlowOptions,
 } from "./flow-classification.js";
-import {
-  canonicalSentence,
-  isClaimSentence,
-  patternOperation,
-  preflightSentence,
-  WAIT_UNTIL,
-} from "./classification.js";
+import { isStaticHoldsClaim } from "./classification.js";
 import {
   findIdentityCollisions,
   loadFlowFile,
@@ -153,16 +147,7 @@ function checkDiagnostics(item: {
       message: problem.message,
       fix: problem.fix,
     }));
-  const text = canonicalSentence(item.text);
-  const operation = patternOperation(text);
-  const preflight = preflightSentence(text);
-  if (
-    !text ||
-    (preflight !== null && preflight !== "unsupported") ||
-    WAIT_UNTIL.test(text) ||
-    (operation !== null && operation !== "verify") ||
-    !isClaimSentence(text)
-  )
+  if (!isStaticHoldsClaim(item.text))
     return [
       {
         severity: "error",
