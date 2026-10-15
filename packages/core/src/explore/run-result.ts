@@ -52,6 +52,8 @@ export interface ExploreFinding {
   readonly message: string;
   readonly step: number;
   readonly route: string;
+  /** The frame that shows the page the finding was seen on, when captured. */
+  readonly frame?: string;
   readonly test?: FindingTest;
 }
 
@@ -196,13 +198,38 @@ function writeLog(trace: readonly TraceEntry[]) {
   return [...writes.entries()].map(([endpoint, w]) => ({ endpoint, ...w }));
 }
 
+/**
+ * The frame of a finding's page. Browser signals arrive during or after the
+ * step's action: its settled frame. A page check judged the page the step
+ * observed before acting: its before frame, else the page the previous step
+ * settled on, else its settled frame only if the action stayed on that route.
+ */
+function findingFrame(
+  failure: ExploreFailure,
+  trace: readonly TraceEntry[],
+  frames: ReadonlyMap<number, StepFrames> | undefined,
+): string | undefined {
+  const own = frames?.get(failure.step);
+  if (failure.kind !== "semantic") return own?.after ?? own?.before;
+  const entry = trace.find((e) => e.step === failure.step);
+  const next = trace.find((e) => e.step > failure.step);
+  const stayed = entry !== undefined && next?.route === entry.route;
+  return (
+    own?.before ??
+    frames?.get(failure.step - 1)?.after ??
+    (stayed ? own?.after : undefined)
+  );
+}
+
 function findingsOf(
   result: ExploreResult,
   tests: ReadonlyMap<string, FindingTest> | undefined,
+  frames: ReadonlyMap<number, StepFrames> | undefined,
 ): ExploreFinding[] {
   return result.failures.map((failure, index) => {
     const entry = result.trace.find((e) => e.step === failure.step);
     const test = tests?.get(failure.signature);
+    const frame = findingFrame(failure, result.trace, frames);
     return {
       id: `F${index + 1}`,
       signature: failure.signature,
@@ -210,6 +237,7 @@ function findingsOf(
       message: failure.message,
       step: failure.step,
       route: entry?.route ?? "",
+      ...(frame ? { frame } : {}),
       ...(test ? { test } : {}),
     };
   });
@@ -256,7 +284,7 @@ export function buildExploreRunResult(
     steps: { requested: meta.requestedSteps, taken: result.trace.length },
     stopReason: result.stopReason ?? null,
     verdict: result.failures.length ? "findings" : "clean",
-    findings: findingsOf(result, meta.tests),
+    findings: findingsOf(result, meta.tests, meta.frames),
     coverage: {
       states: result.states,
       routes: routeVisits(result.trace),

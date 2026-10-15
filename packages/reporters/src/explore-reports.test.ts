@@ -27,6 +27,7 @@ const run: ExploreRunResult = {
       message: hostile,
       step: 1,
       route: "/search",
+      frame: "frames/step-1.jpg",
       test: {
         path: "tests/finding-F1.test.yaml",
         yaml: 'url: https://shop.test/\nsteps:\n  - click the "Search" link\n',
@@ -89,6 +90,7 @@ describe("exploration reports", () => {
     const md = renderExploreMarkdown(run);
     expect(md.split("\n")[2]).toContain("**1 finding** in 2 of 10 steps");
     expect(md.match(/# Heading/g)?.length).toBe(1);
+    expect(md).toContain("- Frame: [frames/step-1.jpg](frames/step-1.jpg)");
     expect(md).toContain("```text\n# Heading");
     expect(md).toContain(
       "sedum run .sedum/explore/r1/tests/finding-F1.test.yaml --detect browser",
@@ -105,7 +107,8 @@ describe("exploration reports", () => {
     expect(html).not.toContain("<script>alert(2)");
     expect(html).not.toContain("<img src=x");
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
-    expect(html).toContain("data:image/jpeg;base64,BAUG");
+    const card = /<section class="finding"[\s\S]*?<\/section>/u.exec(html)![0];
+    expect(card).toContain("data:image/jpeg;base64,BAUG");
     expect(html.match(/<\/script>/g)?.length).toBe(2);
     expect(html).not.toMatch(/(src|href)="https?:/u);
   });
@@ -116,7 +119,12 @@ describe("exploration reports", () => {
       void frames;
       return rest;
     });
-    const html = renderExploreHtml({ ...run, timeline });
+    const findings = run.findings.map((finding) => {
+      const { frame, ...rest } = finding;
+      void frame;
+      return rest;
+    });
+    const html = renderExploreHtml({ ...run, findings, timeline });
     expect(html).toContain("Run with <code>--replay</code>");
   });
 });

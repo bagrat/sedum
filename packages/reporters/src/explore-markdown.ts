@@ -44,9 +44,7 @@ function summaryTable(result: ExploreRunResult): string[] {
   return ["| | |", "| --- | --- |", ...rows.map(([k, v]) => `| ${k} | ${v} |`)];
 }
 
-function frameLink(result: ExploreRunResult, step: number): string[] {
-  const frames = result.timeline.find((s) => s.step === step)?.frames;
-  const frame = frames?.after ?? frames?.before;
+function frameLink(frame: string | undefined): string[] {
   return frame ? [`- Frame: [${inline(frame)}](${frame})`] : [];
 }
 
@@ -84,7 +82,7 @@ function findingSection(
     "",
     `- Signature: ${code(finding.signature)}`,
     `- Page: ${code(finding.route)}`,
-    ...frameLink(result, finding.step),
+    ...frameLink(finding.frame),
     ...testLines(finding, result, command),
     "",
     "**What the browser or page said** (untrusted)",

@@ -135,7 +135,10 @@ export interface ExploreFailure {
   readonly signature: string;
   readonly kind: OracleEvent["kind"];
   readonly message: string;
-  /** The step after which the failure was first observed. */
+  /**
+   * The step whose trace entry first carried the failure. A page check ran on
+   * the page before that step's action; other signals came during or after it.
+   */
   readonly step: number;
 }
 

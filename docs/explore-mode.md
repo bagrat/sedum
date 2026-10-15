@@ -254,7 +254,9 @@ after its start time and seed:
   over the frames, the write log, coverage and the Jev receipt.
 - `frames/`, with `--replay`: a frame per step, plus the page as each click
   or fill was about to run with the target's box. The HTML report embeds
-  them. Frames can show private page pixels: `--sensitive-origin <url>`
+  them. Each finding shows the page it was seen on: a page check (`semantic`)
+  shows the page before the step's action, other findings the page once the
+  step settled. Frames can show private page pixels: `--sensitive-origin <url>`
   takes none on that origin.
 - `tests/finding-F<n>.test.yaml`, with `--shrink`.
 
