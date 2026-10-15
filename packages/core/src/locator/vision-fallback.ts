@@ -72,11 +72,13 @@ export class VisionFallback {
     return this.validateResponse(captured, response.answer, response.started);
   }
 
-  private async request(observation: Parameters<VisionResolver["choose"]>[0]) {
+  private async request(
+    observation: Parameters<VisionResolver["chooseFromScreenshot"]>[0],
+  ) {
     const context = this.context;
     const started = performance.now();
     try {
-      const answer = await context.resolver!.choose(observation, {
+      const answer = await context.resolver!.chooseFromScreenshot(observation, {
         signal: context.signal,
       });
       context.calls.push({ ...answer.call, modality: "vision" });
@@ -112,7 +114,7 @@ export class VisionFallback {
 
   private async validateResponse(
     captured: Awaited<ReturnType<typeof captureVisionObservation>> & {},
-    answer: Awaited<ReturnType<VisionResolver["choose"]>>,
+    answer: Awaited<ReturnType<VisionResolver["chooseFromScreenshot"]>>,
     started: number,
   ): Promise<LocatorResult> {
     const context = this.context;

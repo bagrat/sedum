@@ -16,7 +16,7 @@ export interface VisionObservation {
   readonly candidates: readonly { id: string; name: string; role: string }[];
 }
 export interface VisionResolver {
-  choose(
+  chooseFromScreenshot(
     observation: VisionObservation,
     options?: ProviderCallOptions,
   ): Promise<{
@@ -94,7 +94,10 @@ export class OpenRouterVisionResolver implements VisionResolver {
       );
   }
 
-  async choose(observation: VisionObservation, options?: ProviderCallOptions) {
+  async chooseFromScreenshot(
+    observation: VisionObservation,
+    options?: ProviderCallOptions,
+  ) {
     const model = this.options.model ?? DEFAULT_VISION_MODEL;
     const started = performance.now();
     let failure: VisionFailure = "connection";

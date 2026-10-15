@@ -153,7 +153,9 @@ describe("action retry boundary", () => {
           })),
         } as never,
         provider: { choose, holds: vi.fn(), classifyBatch: vi.fn() },
-        ...(options.vision ? { visionResolver: { choose: visionChoose } } : {}),
+        ...(options.vision
+          ? { visionResolver: { chooseFromScreenshot: visionChoose } }
+          : {}),
         locatorCache: {
           key: new Uint8Array(32).fill(9),
           lookup: async () => ({ reason: "absent" as const }),

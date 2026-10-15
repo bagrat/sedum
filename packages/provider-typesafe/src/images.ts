@@ -1,7 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { choice, noul, type SystemOneRequest } from "@typesafe-ai/sdk";
+import {
+  choice,
+  noul,
+  type ChoiceCriteria,
+  type SystemOneRequest,
+} from "@typesafe-ai/sdk";
 import { ProviderError } from "@sedum-dev/core";
-import type { JudgePageDigest, TargetCheckInput } from "@sedum-dev/core";
+import type {
+  JudgePageDigest,
+  TargetCheckInput,
+  VisionObservation,
+} from "@sedum-dev/core";
 
 /**
  * TypeSafe images are a preview ("dreamer-ready"): the request format can
@@ -17,7 +26,7 @@ const DATA_NOTE =
 
 interface ImageAsset {
   readonly type: "image";
-  readonly format: "jpg";
+  readonly format: "jpg" | "png";
   readonly data_base64: string;
 }
 
@@ -29,14 +38,17 @@ export function hasImages(request: SystemOneRequest): request is ImageRequest {
   return "assets" in request;
 }
 
-/** One JPEG under a fresh reference that cannot occur in page text by accident. */
-function asset(jpeg: Uint8Array): { ref: string; asset: ImageAsset } {
+/** One image under a fresh reference that cannot occur in page text by accident. */
+function asset(
+  image: Uint8Array,
+  format: ImageAsset["format"] = "jpg",
+): { ref: string; asset: ImageAsset } {
   return {
     ref: randomUUID(),
     asset: {
       type: "image",
-      format: "jpg",
-      data_base64: Buffer.from(jpeg).toString("base64"),
+      format,
+      data_base64: Buffer.from(image).toString("base64"),
     },
   };
 }
@@ -96,6 +108,13 @@ export function withScreenshot(
   });
 }
 
+export const COUNT = {
+  none: "No element on this screen fits the step.",
+  one: "Exactly one element fits, or the step's words single one out.",
+  several:
+    "Several elements fit equally well and the step does not say which one.",
+} as const;
+
 const VERB: Record<TargetCheckInput["operation"], string> = {
   click: "click",
   fill: "type into",
@@ -124,14 +143,60 @@ export function buildTargetCheckRequest(
       count: choice(
         "Ignoring the magenta outline in `screen` (a browser screenshot), how many elements could be the one " +
           `a user would ${verb} to do this browser-test step: ${step}?`,
-        {
-          none: "No element on this screen fits the step.",
-          one: "Exactly one element fits, or the step's words single one out.",
-          several:
-            "Several elements fit equally well and the step does not say which one.",
-        },
+        COUNT,
       ),
     },
     assets: { [screenshot.ref]: screenshot.asset },
   });
+}
+
+/** Choice keys for giving up; candidate labels are C1, C2, ... */
+export const VISION_ABSTAIN = {
+  ambiguous:
+    "Several labelled controls fit the step equally well and the step does not say which one.",
+  no_match: "No labelled control fits the step.",
+} as const;
+
+/**
+ * Which labelled control the click step means, from the screenshot with
+ * every candidate boxed and labelled, or one of the abstain keys; and, as
+ * in the pick check, how many elements on screen could fit at all.
+ */
+export function buildVisionRequest(
+  observation: VisionObservation,
+  model: string,
+): { request: ImageRequest; optionIds: readonly string[] } {
+  const screenshot = asset(observation.image, "png");
+  const criteria = Object.create(null) as ChoiceCriteria;
+  for (const candidate of observation.candidates)
+    criteria[candidate.id] = {
+      label: candidate.id,
+      role: candidate.role,
+      name: candidate.name,
+    };
+  Object.assign(criteria, VISION_ABSTAIN);
+  const step = JSON.stringify(observation.instruction);
+  return {
+    request: preflight({
+      model,
+      state: { screen: screenshot.ref },
+      questions: {
+        target: choice(
+          "`screen` is a browser screenshot in which each candidate control has a red box with a label (C1, C2, ...) on its top edge. " +
+            `Which labelled control would a user click to do this browser-test step: ${step}? ` +
+            "Label numbers do not indicate preference. Use what the screenshot shows (text, icons, grouping and position) to tell the controls apart. " +
+            "Choose `ambiguous` rather than guessing when several fit, and `no_match` when none does. " +
+            DATA_NOTE,
+          criteria,
+        ),
+        count: choice(
+          "Ignoring the red boxes and labels in `screen` (a browser screenshot), how many elements could be the one " +
+            `a user would click to do this browser-test step: ${step}?`,
+          COUNT,
+        ),
+      },
+      assets: { [screenshot.ref]: screenshot.asset },
+    }),
+    optionIds: Object.keys(criteria),
+  };
 }

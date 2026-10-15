@@ -1796,7 +1796,7 @@ describe("vision fallback boundaries", () => {
       },
     });
     const vision: VisionResolver = {
-      choose: vi.fn(async () => ({
+      chooseFromScreenshot: vi.fn(async () => ({
         decision: { kind: "candidate" as const, id: "C2" },
         call,
       })),
@@ -1845,12 +1845,12 @@ describe("vision fallback boundaries", () => {
           calls: [call, call],
         });
         expect(captureVisionObservation).not.toHaveBeenCalled();
-        expect(vision.choose).not.toHaveBeenCalled();
+        expect(vision.chooseFromScreenshot).not.toHaveBeenCalled();
       } else {
         expect(
           result.kind === "resolved" && result.target.driverTarget().ref,
         ).toBe("fresh-r1");
-        expect(vision.choose).toHaveBeenCalledTimes(1);
+        expect(vision.chooseFromScreenshot).toHaveBeenCalledTimes(1);
       }
     },
   );
@@ -1878,7 +1878,7 @@ describe("vision fallback boundaries", () => {
           gate: "repeated_member_no_evidence:vision_stale_capture",
         },
       });
-      expect(vision.choose).not.toHaveBeenCalled();
+      expect(vision.chooseFromScreenshot).not.toHaveBeenCalled();
     },
   );
   it("offers count-varying controls with distinct destinations to vision", async () => {
@@ -1895,7 +1895,7 @@ describe("vision fallback boundaries", () => {
       sentence: "open comments for the article with the mountain photo",
       visionResolver: vision,
     });
-    expect(vision.choose).toHaveBeenCalledTimes(1);
+    expect(vision.chooseFromScreenshot).toHaveBeenCalledTimes(1);
     expect(result.kind === "resolved" && result.target.driverTarget().ref).toBe(
       "fresh-r1",
     );
@@ -1915,7 +1915,7 @@ describe("vision fallback boundaries", () => {
         result.kind === "resolved" && result.target.driverTarget().ref,
       ).toBe("fresh-r0");
     }
-    expect(vision.choose).not.toHaveBeenCalled();
+    expect(vision.chooseFromScreenshot).not.toHaveBeenCalled();
   });
   it("uses vision after a low-confidence repeated group is narrowed without evidence", async () => {
     const { page, vision } = setup();
@@ -1934,7 +1934,7 @@ describe("vision fallback boundaries", () => {
     expect(result.kind === "resolved" && result.target.driverTarget().ref).toBe(
       "fresh-r1",
     );
-    expect(vision.choose).toHaveBeenCalledTimes(1);
+    expect(vision.chooseFromScreenshot).toHaveBeenCalledTimes(1);
   });
   it("accepts the second visual candidate, keeps Jev calls and never seeds the cache", async () => {
     const { page, vision, jev } = setup();
@@ -1959,13 +1959,13 @@ describe("vision fallback boundaries", () => {
     expect(result.diagnostic.gate).toBe(
       "repeated_member_no_evidence:vision_selected",
     );
-    expect(vision.choose).toHaveBeenCalledTimes(1);
+    expect(vision.chooseFromScreenshot).toHaveBeenCalledTimes(1);
   });
   it.each(["unknown", "abstain", "error", "stale"])(
     "fails closed without retry after %s",
     async (mode) => {
       const { page, setVersion, vision, jev } = setup();
-      vi.mocked(vision.choose).mockImplementation(async () => {
+      vi.mocked(vision.chooseFromScreenshot).mockImplementation(async () => {
         if (mode === "error") throw new Error("provider failed");
         if (mode === "stale") setVersion({ ...initial, revision: 2 });
         return {
@@ -1987,7 +1987,7 @@ describe("vision fallback boundaries", () => {
           outcome: "failed",
           failure: "stale_page",
         });
-      expect(vision.choose).toHaveBeenCalledTimes(1);
+      expect(vision.chooseFromScreenshot).toHaveBeenCalledTimes(1);
     },
   );
   it("never invokes vision for fills", async () => {
@@ -1997,7 +1997,7 @@ describe("vision fallback boundaries", () => {
       sentence: "Edit",
       visionResolver: vision,
     });
-    expect(vision.choose).not.toHaveBeenCalled();
+    expect(vision.chooseFromScreenshot).not.toHaveBeenCalled();
   });
   it("asks vision when the text model finds no match for a click", async () => {
     const { page, vision } = setup();
@@ -2007,7 +2007,7 @@ describe("vision fallback boundaries", () => {
       sentence: "click the Edit under the photo of the grey two-tone top",
       visionResolver: vision,
     });
-    expect(vision.choose).toHaveBeenCalledTimes(1);
+    expect(vision.chooseFromScreenshot).toHaveBeenCalledTimes(1);
     expect(picked).toMatchObject({
       kind: "resolved",
       diagnostic: {
@@ -2019,7 +2019,7 @@ describe("vision fallback boundaries", () => {
       "fresh-r1",
     );
     // A vision abstention keeps the text model's "none".
-    vi.mocked(vision.choose).mockResolvedValueOnce({
+    vi.mocked(vision.chooseFromScreenshot).mockResolvedValueOnce({
       decision: { kind: "abstain" as const, reason: "no visible match" },
       call,
     });
@@ -2049,7 +2049,7 @@ describe("vision fallback boundaries", () => {
   });
   it("preserves safe vision failure details and billed usage", async () => {
     const { page, vision, jev } = setup();
-    vi.mocked(vision.choose).mockRejectedValue(
+    vi.mocked(vision.chooseFromScreenshot).mockRejectedValue(
       new VisionRequestError(
         "invalid-response",
         "truncated_response",
@@ -2076,7 +2076,7 @@ describe("vision fallback boundaries", () => {
       },
       calls: [call, call],
     });
-    expect(vision.choose).toHaveBeenCalledTimes(1);
+    expect(vision.chooseFromScreenshot).toHaveBeenCalledTimes(1);
   });
   it("does not capture or call vision for confident unique targets", async () => {
     const { vision } = setup();
@@ -2088,7 +2088,7 @@ describe("vision fallback boundaries", () => {
     );
     expect(result.kind).toBe("resolved");
     expect(captureVisionObservation).not.toHaveBeenCalled();
-    expect(vision.choose).not.toHaveBeenCalled();
+    expect(vision.chooseFromScreenshot).not.toHaveBeenCalled();
   });
 
   describe("screenshot target check", () => {

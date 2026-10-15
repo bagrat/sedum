@@ -27,7 +27,7 @@ describe("OpenRouter vision adapter", () => {
     vi.stubGlobal("fetch", fetch);
     const result = await new OpenRouterVisionResolver({
       apiKey: "test-key",
-    }).choose(observation);
+    }).chooseFromScreenshot(observation);
     expect(result.decision).toEqual({ kind: "candidate", id: "C2" });
     expect(result.call).toMatchObject({
       model: "google/test",
@@ -55,7 +55,9 @@ describe("OpenRouter vision adapter", () => {
     const fetch = vi.fn(async () => reply(value));
     vi.stubGlobal("fetch", fetch);
     await expect(
-      new OpenRouterVisionResolver({ apiKey: "test-key" }).choose(observation),
+      new OpenRouterVisionResolver({ apiKey: "test-key" }).chooseFromScreenshot(
+        observation,
+      ),
     ).rejects.toMatchObject({
       code: "invalid-response",
       failure: "invalid_selection",
@@ -72,9 +74,9 @@ describe("OpenRouter vision adapter", () => {
     );
     expect(
       (
-        await new OpenRouterVisionResolver({ apiKey: "test-key" }).choose(
-          observation,
-        )
+        await new OpenRouterVisionResolver({
+          apiKey: "test-key",
+        }).chooseFromScreenshot(observation)
       ).decision,
     ).toEqual({ kind: "abstain", reason: "ambiguous" });
   });
@@ -84,7 +86,9 @@ describe("OpenRouter vision adapter", () => {
     );
     vi.stubGlobal("fetch", fetch);
     await expect(
-      new OpenRouterVisionResolver({ apiKey: "test-key" }).choose(observation),
+      new OpenRouterVisionResolver({ apiKey: "test-key" }).chooseFromScreenshot(
+        observation,
+      ),
     ).rejects.toThrow("Vision request failed (HTTP 429)");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -101,7 +105,7 @@ describe("OpenRouter vision adapter", () => {
         vi.fn(async () => new Response("private provider payload", { status })),
       );
       const error = await new OpenRouterVisionResolver({ apiKey: "test-key" })
-        .choose(observation)
+        .chooseFromScreenshot(observation)
         .catch((error) => error);
       expect(error).toMatchObject({
         code,
@@ -148,9 +152,9 @@ describe("OpenRouter vision adapter", () => {
         ),
       );
       await expect(
-        new OpenRouterVisionResolver({ apiKey: "test-key" }).choose(
-          observation,
-        ),
+        new OpenRouterVisionResolver({
+          apiKey: "test-key",
+        }).chooseFromScreenshot(observation),
       ).rejects.toMatchObject({
         failure,
         httpStatus: 200,
@@ -170,7 +174,9 @@ describe("OpenRouter vision adapter", () => {
       }),
     );
     await expect(
-      new OpenRouterVisionResolver({ apiKey: "test-key" }).choose(observation),
+      new OpenRouterVisionResolver({ apiKey: "test-key" }).chooseFromScreenshot(
+        observation,
+      ),
     ).rejects.toMatchObject({ failure: "connection", code: "connection" });
     const fetch = vi.fn(
       (_url: unknown, init: RequestInit) =>
@@ -185,14 +191,18 @@ describe("OpenRouter vision adapter", () => {
     );
     vi.stubGlobal("fetch", fetch);
     await expect(
-      new OpenRouterVisionResolver({ apiKey: "test-key", timeoutMs: 5 }).choose(
-        observation,
-      ),
+      new OpenRouterVisionResolver({
+        apiKey: "test-key",
+        timeoutMs: 5,
+      }).chooseFromScreenshot(observation),
     ).rejects.toMatchObject({ failure: "timeout", code: "timeout" });
     await expect(
-      new OpenRouterVisionResolver({ apiKey: "test-key" }).choose(observation, {
-        signal: AbortSignal.abort(),
-      }),
+      new OpenRouterVisionResolver({ apiKey: "test-key" }).chooseFromScreenshot(
+        observation,
+        {
+          signal: AbortSignal.abort(),
+        },
+      ),
     ).rejects.toMatchObject({ failure: "canceled" });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
