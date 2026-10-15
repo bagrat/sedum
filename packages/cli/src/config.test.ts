@@ -279,6 +279,7 @@ describe("project configuration", () => {
   model: google/gemini-3.8-flash
   timeoutMs: 2500
   retry: true
+constructor: 1
 variables:
   OPEN_ROUTER_API_KEY: forbidden
 `,
@@ -298,6 +299,10 @@ variables:
         expect.objectContaining({
           key: "vision.timeoutMs",
           code: "removed_config_key",
+        }),
+        expect.objectContaining({
+          key: "constructor",
+          code: "unknown_config_key",
         }),
         expect.objectContaining({
           key: "variables.OPEN_ROUTER_API_KEY",

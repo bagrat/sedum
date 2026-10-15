@@ -813,6 +813,35 @@ describe("TypeSafeAdapter screenshots", () => {
       );
     });
 
+    it("does not share the image rejection latch with the Judge and target check", async () => {
+      const rejected = () =>
+        json({ detail: { error_type: "api_usage_error" } }, 400);
+      const judgeFirst = recorder([
+        rejected(),
+        json(judgeReply),
+        reply(target(0.95), one),
+      ]);
+      await judgeFirst.adapter.holds("The badge is red", digest);
+      expect(
+        await judgeFirst.adapter.chooseFromScreenshot(observation),
+      ).toMatchObject({ decision: { kind: "candidate", id: "C2" } });
+      expect(judgeFirst.requests.map((r) => "assets" in r.body)).toEqual([
+        true,
+        false,
+        true,
+      ]);
+
+      const visionFirst = recorder([rejected(), json(judgeReply)]);
+      await expect(
+        visionFirst.adapter.chooseFromScreenshot(observation),
+      ).rejects.toMatchObject({ code: "invalid-input" });
+      await visionFirst.adapter.holds("The badge is red", digest);
+      expect(visionFirst.requests.map((r) => "assets" in r.body)).toEqual([
+        true,
+        true,
+      ]);
+    });
+
     it("abstains unless Jev is sure of the box and that something fits", async () => {
       const { adapter } = recorder([
         reply(target(0.85), one),

@@ -176,7 +176,9 @@ function keyProblem(
   key: string,
   names: ReadonlySet<string>,
 ): readonly [string, string, string] | null {
-  const removed = REMOVED_KEYS[path];
+  const removed = Object.hasOwn(REMOVED_KEYS, path)
+    ? REMOVED_KEYS[path]
+    : undefined;
   if (removed)
     return [
       "removed_config_key",

@@ -584,7 +584,13 @@ export class TypeSafeAdapter
     );
   }
 
-  /** Vision fallback: which labelled control on the screenshot the click means. */
+  /**
+   * Vision fallback: which labelled control on the screenshot the click
+   * means. With vision on, clicks never fall back to a permissive pick, so
+   * vision neither reads nor sets the run-wide image latch: a rejected
+   * Judge or check screenshot must not turn vision off for the rest of the
+   * run, and one rejected vision request fails only its own step.
+   */
   async chooseFromScreenshot(
     observation: VisionObservation,
     options?: ProviderCallOptions,
@@ -594,7 +600,7 @@ export class TypeSafeAdapter
       this.imageModel,
     );
     return this.validated(
-      await this.askImage(request, options),
+      await this.ask(request, options),
       this.imageModel,
       (response) => {
         const answers = answersOf(response);
