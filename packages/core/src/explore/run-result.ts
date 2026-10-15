@@ -207,18 +207,29 @@ function writeLog(trace: readonly TraceEntry[]) {
 function findingFrame(
   failure: ExploreFailure,
   trace: readonly TraceEntry[],
-  frames: ReadonlyMap<number, StepFrames> | undefined,
+  frames: ReadonlyMap<number, StepFrames> = new Map(),
 ): string | undefined {
-  const own = frames?.get(failure.step);
-  if (failure.kind !== "semantic") return own?.after ?? own?.before;
-  const entry = trace.find((e) => e.step === failure.step);
-  const next = trace.find((e) => e.step > failure.step);
-  const stayed = entry !== undefined && next?.route === entry.route;
-  return (
-    own?.before ??
-    frames?.get(failure.step - 1)?.after ??
-    (stayed ? own?.after : undefined)
-  );
+  const own = frames.get(failure.step) ?? {};
+  const choices =
+    failure.kind === "semantic"
+      ? [
+          own.before,
+          frames.get(failure.step - 1)?.after,
+          stayedFrame(own, trace, failure.step),
+        ]
+      : [own.after, own.before];
+  return choices.find((frame) => frame !== undefined);
+}
+
+/** A step's settled frame, if its action left the page on the same route. */
+function stayedFrame(
+  own: StepFrames,
+  trace: readonly TraceEntry[],
+  step: number,
+): string | undefined {
+  const route = trace.find((e) => e.step === step)?.route;
+  const next = trace.find((e) => e.step > step)?.route;
+  return route !== undefined && next === route ? own.after : undefined;
 }
 
 function findingsOf(
