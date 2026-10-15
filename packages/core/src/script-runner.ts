@@ -8,6 +8,7 @@ import {
 import {
   classifySentenceSteps,
   type ClassifiedFlowSentence,
+  type SentenceClassification,
 } from "./flow-classification.js";
 import {
   isStaticHoldsClaim,
@@ -498,6 +499,34 @@ export async function runScriptTest(
       return true;
     };
 
+    /**
+     * Classify one sentence. A literal claim is taken from its words, as
+     * `sedum validate` takes it; a model asked to classify a bare claim
+     * answers an unclear step.
+     */
+    const classifyOne = async (
+      template: SentenceStep,
+      check: boolean,
+    ): Promise<{
+      readonly classified: ClassifiedStep | null | undefined;
+      readonly diagnostic?: SentenceClassification["diagnostics"][number];
+    }> => {
+      if (check && isStaticHoldsClaim(template.text))
+        return { classified: claimStep(template) };
+      const checked = await classifySentenceSteps([template], classifyOptions);
+      if (report && checked.classification.calls.length)
+        await report.test.addAttemptCalls(
+          checked.classification.calls.map((call) =>
+            resultCall(call, "classification"),
+          ),
+        );
+      const diagnostic = checked.diagnostics[0];
+      return {
+        classified: checked.classification.steps[0],
+        ...(diagnostic ? { diagnostic } : {}),
+      };
+    };
+
     const sentence = async (
       text: unknown,
       values: AiValues | undefined,
@@ -535,21 +564,7 @@ export async function runScriptTest(
               `Pass it as the second argument: ai(${JSON.stringify(text)}, { ${token.key}: ... }).`,
             );
         const template = sentenceStep(text, source);
-        // A literal claim is taken from its words, as `sedum validate` takes
-        // it; a model asked to classify a bare claim answers an unclear step.
-        const claim = check && isStaticHoldsClaim(text);
-        const checked = claim
-          ? null
-          : await classifySentenceSteps([template], classifyOptions);
-        if (report && checked?.classification.calls.length)
-          await report.test.addAttemptCalls(
-            checked.classification.calls.map((call) =>
-              resultCall(call, "classification"),
-            ),
-          );
-        const classified = checked
-          ? checked.classification.steps[0]
-          : claimStep(template);
+        const { classified, diagnostic } = await classifyOne(template, check);
         if (
           check &&
           classified &&
@@ -560,8 +575,7 @@ export async function runScriptTest(
             "ai.holds takes one claim about the page.",
             'Write ai.holds("the passkey screen is shown").',
           );
-        if (checked?.diagnostics.length || !classified) {
-          const diagnostic = checked?.diagnostics[0];
+        if (diagnostic || !classified) {
           stop({
             status: "could_not_run",
             file: absolute,
