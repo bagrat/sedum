@@ -903,6 +903,32 @@ describe("run output failure contract", () => {
     });
   });
 
+  it("names every problem in an invalid file, as validate does", async () => {
+    await inTemporaryRoot();
+    await writeFile(
+      path.join(root!, "broken.test.yaml"),
+      [
+        "url: https://example.test",
+        "steps:",
+        "  - hover over the menu",
+        "  - click the login button and then type hello in the username field",
+        "  - verify {{missing}} is shown",
+        "",
+      ].join("\n"),
+    );
+    const output = await executeRunCommand({
+      ...options,
+      paths: ["broken.test.yaml"],
+    });
+    expect(
+      output.result.discoveryProblems?.map((p) => [p.code, p.line, p.col]),
+    ).toEqual([
+      ["unsupported", 3, 5],
+      ["multiple_actions", 4, 5],
+      ["unknown_placeholder", 5, 5],
+    ]);
+  });
+
   it("keeps URLs and credentials out of invalid-file result diagnostics", async () => {
     await inTemporaryRoot();
     await writeFile(

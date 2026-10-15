@@ -2,12 +2,20 @@ import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import { minimatch } from "minimatch";
 import {
+  classifyParsedFlow,
+  displayPath,
+  FileClassificationCache,
   listTests,
   loadListingEntries,
+  NOT_CHECKED_OFFLINE_CODE,
+  resolveFlowModules,
   TEST_SUFFIXES,
   walkSuiteFiles,
+  type ClassificationCache,
   type InvalidListEntry,
+  type ListedDiagnostic,
   type ListedTest,
+  type ParsedFlowResult,
   type RunResult,
 } from "@sedum-dev/core";
 import type { ResolvedProjectConfig } from "./config.js";
@@ -167,7 +175,75 @@ export async function discoverRunTests(
   const listing = listTests(parsed, { repoRoot: root });
   return {
     tests: selectRunTests(listing.tests, filters),
-    invalid: listing.invalid,
+    invalid: await withSentenceErrors(listing.invalid, parsed, {
+      root,
+      cache: await FileClassificationCache.load(
+        path.join(root, ".sedum", "classifications.json"),
+        config.providerModel,
+        config.providerName,
+      ),
+    }),
     problems,
   };
+}
+
+const diagnosticKey = (item: ListedDiagnostic): string =>
+  `${item.code}:${item.line}:${item.col}`;
+
+/**
+ * A file that failed format can still have sentences that offline validation
+ * rejects, such as an unsupported verb or two actions in one step. Report
+ * them with the format errors, as `sedum validate` does, so one run names
+ * every problem in the file. A sentence only the model can classify is left
+ * for the run.
+ */
+async function withSentenceErrors(
+  invalid: readonly InvalidListEntry[],
+  parsed: readonly {
+    readonly file: string;
+    readonly result: ParsedFlowResult;
+  }[],
+  options: { readonly root: string; readonly cache: ClassificationCache },
+): Promise<InvalidListEntry[]> {
+  return Promise.all(
+    invalid.map(async (entry) => {
+      const found = parsed.find(
+        (item) =>
+          item.result.candidate !== undefined &&
+          displayPath(options.root, item.file) === entry.file,
+      );
+      if (!found) return entry;
+      const resolved = await resolveFlowModules(found.result, {
+        repoRoot: options.root,
+        partial: true,
+      });
+      const classified = await classifyParsedFlow(resolved, {
+        mode: "offline",
+        cache: options.cache,
+      });
+      const seen = new Set(entry.diagnostics.map(diagnosticKey));
+      const extra = classified.diagnostics
+        .filter(
+          (item) =>
+            item.severity === "error" &&
+            item.code !== NOT_CHECKED_OFFLINE_CODE &&
+            item.source.file === found.file,
+        )
+        .map((item) => ({
+          severity: item.severity,
+          code: item.code,
+          line: item.source.line,
+          col: item.source.col,
+          message: item.message,
+          fix: item.fix,
+        }))
+        .filter((item) => !seen.has(diagnosticKey(item)));
+      return {
+        file: entry.file,
+        diagnostics: [...entry.diagnostics, ...extra].sort(
+          (a, b) => a.line - b.line || a.col - b.col,
+        ),
+      };
+    }),
+  );
 }
