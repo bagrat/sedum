@@ -490,6 +490,23 @@ async function findConfig(
   }
 }
 
+/**
+ * The project-root `.env` that `sedum run` reads, for a command that does not
+ * load sedum.config.yaml. The root is the nearest directory with a config, or
+ * `start` itself. A missing file is empty.
+ */
+export async function readProjectEnvironment(
+  start: string,
+): Promise<Record<string, string | undefined>> {
+  const { root } = await findConfig(start);
+  try {
+    return parseEnv(await readFile(path.join(root, ".env"), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
+}
+
 function freeze(config: ResolvedProjectConfig): ResolvedProjectConfig {
   Object.freeze(config.include);
   Object.freeze(config.exclude);

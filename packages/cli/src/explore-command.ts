@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { InvalidArgumentError } from "commander";
 import type { ExploreDetect, ExploreSafeMode } from "./cli-arguments.js";
+import { readProjectEnvironment } from "./config.js";
 import { FrameRecorder } from "./explore-frames.js";
 import { writeExploreReports } from "./explore-output.js";
 import type {
@@ -45,6 +46,8 @@ export interface ExploreCommandOptions {
   readonly detectAllow?: readonly string[];
   /** A Playwright storage-state file whose cookies sign the browser in. */
   readonly cookies?: string;
+  /** Jev's TypeSafe settings; unset values come from the process environment. */
+  readonly provider?: ExploreProvider;
   readonly signal?: AbortSignal;
   readonly write: (text: string) => void;
 }
@@ -195,10 +198,42 @@ async function launch(headed: boolean): Promise<BrowserSession> {
   });
 }
 
-async function advisor(mode: ExploreMode, needed: boolean) {
+async function advisor(
+  mode: ExploreMode,
+  needed: boolean,
+  provider: ExploreProvider = {},
+) {
   if (mode !== "guided" && !needed) return undefined;
   const { TypeSafeAdapter } = await import("@sedum-dev/provider-typesafe");
-  return new TypeSafeAdapter();
+  return new TypeSafeAdapter(provider);
+}
+
+/** The TypeSafe settings the walk's Jev calls use. */
+export interface ExploreProvider {
+  readonly apiKey?: string;
+  readonly baseURL?: string;
+  readonly model?: string;
+}
+
+/**
+ * TYPESAFE_API_KEY, TYPESAFE_BASE_URL and TYPESAFE_DEFAULT_MODEL as `sedum run`
+ * reads them: the process environment first, then the project-root `.env`.
+ */
+export async function exploreProvider(
+  cwd: string,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<ExploreProvider> {
+  const file = await readProjectEnvironment(cwd);
+  const value = (name: string): string | undefined =>
+    environment[name]?.trim() || file[name]?.trim() || undefined;
+  const apiKey = value("TYPESAFE_API_KEY");
+  const baseURL = value("TYPESAFE_BASE_URL");
+  const model = value("TYPESAFE_DEFAULT_MODEL");
+  return {
+    ...(apiKey ? { apiKey } : {}),
+    ...(baseURL ? { baseURL } : {}),
+    ...(model ? { model } : {}),
+  };
 }
 
 /**
@@ -239,7 +274,7 @@ async function shrinkFailures(
     result,
     options,
     directory,
-    resolver: (await advisor("guided", true))!,
+    resolver: (await advisor("guided", true, options.provider))!,
     freshPage: () => openPage(browser, options.cookies),
     calls: [],
   };
@@ -404,7 +439,7 @@ async function walk(
   options: ExploreCommandOptions,
 ): Promise<ExploreResult> {
   const { explore } = await import("@sedum-dev/core");
-  const guide = await advisor(options.mode, false);
+  const guide = await advisor(options.mode, false, options.provider);
   return explore(page, {
     startUrl: options.url,
     steps: options.steps,
@@ -570,7 +605,11 @@ function safetyOf(safe: ExploreFlags["safe"]): ExploreSafety {
   return safe === true ? "on" : safe;
 }
 
-function run(url: string, flags: ExploreFlags, io: ExploreIo): Promise<number> {
+async function run(
+  url: string,
+  flags: ExploreFlags,
+  io: ExploreIo,
+): Promise<number> {
   return executeExploreCommand({
     url,
     steps: flags.steps,
@@ -588,6 +627,7 @@ function run(url: string, flags: ExploreFlags, io: ExploreIo): Promise<number> {
     detect: flags.detect,
     detectAllow: flags.detectAllow,
     ...(flags.cookies ? { cookies: path.resolve(io.cwd, flags.cookies) } : {}),
+    provider: await exploreProvider(io.cwd),
     ...(io.signal ? { signal: io.signal } : {}),
     write: io.write,
   });
@@ -627,7 +667,7 @@ export async function exploreAction(
     if (!(error instanceof ProviderError && error.code === "configuration"))
       throw error;
     io.writeErr(
-      `${error.message}\nFix: set TYPESAFE_API_KEY, or use --mode random or --mode heuristic without --shrink.\n`,
+      `${error.message}\nFix: set TYPESAFE_API_KEY in the project-root .env or your shell, or use --mode random or --mode heuristic without --shrink.\n`,
     );
   }
   return 3;
