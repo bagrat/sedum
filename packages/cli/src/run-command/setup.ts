@@ -88,15 +88,16 @@ function visionOverride(options: RunCommandOptions): object {
 function validateVisionKey(config: ResolvedProjectConfig): void {
   if (!config.vision.enabled) return;
   if (config.visionApiKey) return;
+  const keyName = config.visionApiKeyEnv ?? "OPEN_ROUTER_API_KEY";
   throw new ProjectConfigError([
     {
       code: "missing_vision_api_key",
       file: path.join(config.projectRoot, ".env"),
       line: 1,
       col: 1,
-      key: "OPEN_ROUTER_API_KEY",
-      message: "Vision fallback requires OPEN_ROUTER_API_KEY.",
-      fix: "Set OPEN_ROUTER_API_KEY in the invoking process or project-root .env, or disable vision.",
+      key: keyName,
+      message: `Vision fallback requires ${keyName}.`,
+      fix: `Set ${keyName} in the invoking process or project-root .env, or disable vision.`,
     },
   ]);
 }

@@ -297,7 +297,11 @@ async function handleOperationalFailure(
   outcome: MutableOutcome,
 ): Promise<"complete" | "stop"> {
   await slot.browser.recycle();
-  const diagnostic = flowDiagnostic(result, request.config.providerName);
+  const diagnostic = flowDiagnostic(
+    result,
+    request.config.providerName,
+    request.config.apiKeyEnv,
+  );
   outcome.operational ??= diagnostic;
   if (stopsRun(result.code)) return "stop";
   outcome.erroredTests += 1;

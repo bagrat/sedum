@@ -28,6 +28,22 @@ async function project(): Promise<string> {
 }
 
 describe("sedum init", () => {
+  it("uses configured credential names in the template and setup advice", async () => {
+    const cwd = await project();
+    await writeFile(
+      path.join(cwd, "sedum.config.yaml"),
+      "provider: { apiKeyEnv: FOO }\nvision: { apiKeyEnv: SIGHT }\n",
+    );
+    const result = await runCli(["init"], "0.0.0", { cwd });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("set FOO");
+    expect(result.stdout).not.toContain("TYPESAFE_API_KEY");
+    const template = await readFile(path.join(cwd, ".env.example"), "utf8");
+    expect(template).toContain("FOO=");
+    expect(template).toContain("SIGHT=");
+    expect(template).not.toContain("TYPESAFE_API_KEY");
+  });
+
   it("keeps installed dependencies out of a fresh project's first git add", async () => {
     const cwd = await project();
     await writeFile(path.join(cwd, "package.json"), '{"private":true}\n');

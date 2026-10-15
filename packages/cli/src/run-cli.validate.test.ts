@@ -51,6 +51,17 @@ const BROKEN = {
 };
 
 const plain = { stdoutIsTTY: false, stderrIsTTY: false, color: false };
+
+it("validate rejects invalid credential variable names without reading secrets", async () => {
+  const cwd = await project({
+    "sedum.config.yaml": "provider: { apiKeyEnv: BAD-NAME }\n",
+  });
+  const result = await runCli(["validate"], "0.0.0", { cwd, ...plain });
+  expect(result.exitCode).toBe(3);
+  expect(result.stderr).toContain("provider.apiKeyEnv");
+  expect(result.stderr).toContain("valid environment variable name");
+});
+
 const probabilities = Object.fromEntries(
   MODEL_CHOICES.map((choice) => [choice, choice === "click" ? 0.95 : 0.005]),
 ) as Record<(typeof MODEL_CHOICES)[number], number>;

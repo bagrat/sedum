@@ -13,6 +13,7 @@ import {
   loadProjectConfig,
   ProjectConfigError,
   type ConfigDiagnostic,
+  type ResolvedProjectConfig,
 } from "./config.js";
 import {
   configDiagnostic,
@@ -66,11 +67,16 @@ function emptyProjectProblem(
   };
 }
 
-const missingKey: CliDiagnostic = {
-  code: "missing_key",
-  message: "`sedum validate --online` needs a configured model provider.",
-  fix: "Set the selected provider's credentials (TYPESAFE_API_KEY, OPENROUTER_API_KEY, or CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AUTH_TOKEN/CLOUDFLARE_API_TOKEN) and rerun; otherwise omit --online.",
-};
+function missingKey(config?: ResolvedProjectConfig): CliDiagnostic {
+  const credentials = config?.apiKeyEnv
+    ? `${config.apiKeyEnv}${config.providerName === "clef" ? " and CLOUDFLARE_ACCOUNT_ID" : ""}`
+    : "the selected provider's credentials (TYPESAFE_API_KEY, OPENROUTER_API_KEY, or CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AUTH_TOKEN/CLOUDFLARE_API_TOKEN)";
+  return {
+    code: "missing_key",
+    message: "`sedum validate --online` needs a configured model provider.",
+    fix: `Set ${credentials} and rerun; otherwise omit --online.`,
+  };
+}
 
 async function onlineProvider(
   options: ValidateCommandOptions,
@@ -78,9 +84,10 @@ async function onlineProvider(
   | { readonly provider: ClassificationProvider; readonly model: string }
   | CliDiagnostic
 > {
+  let config: ResolvedProjectConfig | undefined;
   try {
     // Only the explicit online path reads secrets: process env and .env.
-    const config = await loadProjectConfig(options.cwd);
+    config = await loadProjectConfig(options.cwd);
     return {
       provider: await options.createProvider({
         ...(config.apiKey ? { apiKey: config.apiKey } : {}),
@@ -100,7 +107,7 @@ async function onlineProvider(
   } catch (error) {
     if (error instanceof ProjectConfigError) return configDiagnostic(error);
     if (error instanceof ProviderError && error.code === "configuration")
-      return missingKey;
+      return missingKey(config);
     return {
       code: "setup_error",
       message: "The classification provider could not be prepared.",

@@ -15,9 +15,14 @@ export interface CanonicalDiagnosticError {
 export type ProviderName = ResolvedProjectConfig["providerName"];
 
 export function providerDiagnostic(
-  providerName: ProviderName,
+  provider:
+    ProviderName | Pick<ResolvedProjectConfig, "providerName" | "apiKeyEnv">,
   code: "authentication" | "configuration",
+  apiKeyEnv?: string,
 ): CliDiagnostic {
+  const providerName =
+    typeof provider === "string" ? provider : provider.providerName;
+  if (typeof provider !== "string") apiKeyEnv = provider.apiKeyEnv;
   if (providerName === "openrouter")
     return {
       code: `provider_${code}`,
@@ -25,30 +30,30 @@ export function providerDiagnostic(
         code === "authentication"
           ? "OpenRouter rejected the configured API key."
           : "The OpenRouter decision provider is not configured correctly.",
-      fix: "Set OPENROUTER_API_KEY (or OPEN_ROUTER_API_KEY) to a valid OpenRouter key, check account credits and provider.model with `sedum doctor`, then rerun.",
+      fix: `Set ${apiKeyEnv ?? "OPENROUTER_API_KEY (or OPEN_ROUTER_API_KEY)"} to a valid OpenRouter key, check account credits and provider.model with \`sedum doctor\`, then rerun.`,
     };
   if (providerName === "clef")
     return code === "authentication"
       ? {
           code: "provider_authentication",
           message: "Cloudflare rejected the configured API token.",
-          fix: "Check CLOUDFLARE_ACCOUNT_ID, replace CLOUDFLARE_AUTH_TOKEN (or CLOUDFLARE_API_TOKEN) with a token for that account that has Workers AI Read and Edit permissions, run `sedum doctor`, then rerun.",
+          fix: `Check CLOUDFLARE_ACCOUNT_ID, replace ${apiKeyEnv ?? "CLOUDFLARE_AUTH_TOKEN (or CLOUDFLARE_API_TOKEN)"} with a token for that account that has Workers AI Read and Edit permissions, run \`sedum doctor\`, then rerun.`,
         }
       : {
           code: "provider_configuration",
           message: "The Cloudflare Clef provider is not configured correctly.",
-          fix: "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AUTH_TOKEN (or CLOUDFLARE_API_TOKEN), then check the account, Workers AI access, and model with `sedum doctor`.",
+          fix: `Set CLOUDFLARE_ACCOUNT_ID and ${apiKeyEnv ?? "CLOUDFLARE_AUTH_TOKEN (or CLOUDFLARE_API_TOKEN)"}, then check the account, Workers AI access, and model with \`sedum doctor\`.`,
         };
   return code === "authentication"
     ? {
         code: "provider_authentication",
         message: "The model provider rejected the API key.",
-        fix: "Set TYPESAFE_API_KEY to a valid key, check it with `sedum doctor`, then rerun.",
+        fix: `Set ${apiKeyEnv ?? "TYPESAFE_API_KEY"} to a valid key, check it with \`sedum doctor\`, then rerun.`,
       }
     : {
         code: "provider_configuration",
         message: "The model provider is not configured correctly.",
-        fix: "Check TYPESAFE_API_KEY, TYPESAFE_BASE_URL and the model with `sedum doctor`, then rerun.",
+        fix: `Check ${apiKeyEnv ?? "TYPESAFE_API_KEY"}, TYPESAFE_BASE_URL and the model with \`sedum doctor\`, then rerun.`,
       };
 }
 
@@ -65,6 +70,7 @@ export class DetectorUnsupportedError extends Error {
 export function setupDiagnostic(
   error: unknown,
   providerName: ProviderName = "typesafe",
+  apiKeyEnv?: string,
 ): CliDiagnostic {
   if (error instanceof ProjectConfigError) return configDiagnostic(error);
   if (error instanceof DetectorUnsupportedError)
@@ -75,11 +81,11 @@ export function setupDiagnostic(
     };
   if (error instanceof ProviderError && error.code === "configuration")
     return providerName !== "typesafe"
-      ? providerDiagnostic(providerName, "configuration")
+      ? providerDiagnostic(providerName, "configuration", apiKeyEnv)
       : {
           code: "missing_key",
           message: "The model provider is not configured.",
-          fix: "Set TYPESAFE_API_KEY for the configured endpoint, then rerun the command.",
+          fix: `Set ${apiKeyEnv ?? "TYPESAFE_API_KEY"} for the configured endpoint, then rerun the command.`,
         };
   if (error instanceof BrowserDriverError && error.code === "browser-missing")
     return {
@@ -148,6 +154,7 @@ export function flowDiagnostic(
     };
   },
   providerName: ProviderName = "typesafe",
+  apiKeyEnv?: string,
 ): CliDiagnostic {
   if (
     result.code === "invalid_test" ||
@@ -219,9 +226,9 @@ export function flowDiagnostic(
       fix: "Lower --parallel or --provider-concurrency, or retry later.",
     };
   if (result.code === "provider_authentication")
-    return providerDiagnostic(providerName, "authentication");
+    return providerDiagnostic(providerName, "authentication", apiKeyEnv);
   if (result.code === "provider_configuration")
-    return providerDiagnostic(providerName, "configuration");
+    return providerDiagnostic(providerName, "configuration", apiKeyEnv);
   if (result.code.startsWith("provider_"))
     return {
       code: result.code,
