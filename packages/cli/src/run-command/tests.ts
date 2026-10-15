@@ -276,7 +276,7 @@ function testDependencies(
       recorder: request.recorder,
       slot: { ordinal, lane },
       privacy: {
-        secretValues: [],
+        secretValues: [...(config.credentialValues ?? [])],
         sensitiveOrigins: options.sensitiveOrigins,
       },
       evidenceEnabled: options.evidence,

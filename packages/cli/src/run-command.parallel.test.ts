@@ -154,6 +154,7 @@ async function project(count: number): Promise<string[]> {
   root = await mkdtemp(path.join(tmpdir(), "sedum-parallel-"));
   previous = process.cwd();
   process.chdir(root);
+  vi.stubEnv("TYPESAFE_API_KEY", "synthetic-typesafe-key");
   const names = Array.from(
     { length: count },
     (_, index) => `t${String(index).padStart(2, "0")}.test.yaml`,

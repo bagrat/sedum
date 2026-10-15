@@ -49,7 +49,17 @@ vi.mock("@sedum-dev/core", async (importOriginal) => {
   return {
     ...actual,
     FileClassificationCache: { load: vi.fn(async () => ({})) },
-    PlaywrightBrowserDriver: class {},
+    PlaywrightBrowserDriver: class {
+      async launch() {
+        return {
+          close: async () => undefined,
+          newContext: async () => ({
+            close: async () => undefined,
+            newPage: async () => ({ close: async () => undefined }),
+          }),
+        };
+      }
+    },
     runFlow: vi.fn(
       async (
         file: string,
@@ -81,6 +91,7 @@ let previous: string | undefined;
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   if (previous) process.chdir(previous);
   if (root) await rm(root, { recursive: true, force: true });
   root = undefined;
@@ -945,6 +956,53 @@ describe("run output failure contract", () => {
     expect(resultText).not.toContain("password");
     expect(resultText).not.toContain("token=abc");
   });
+
+  it.each(["import", "runtime"])(
+    "redacts custom credentials from %s errors and persisted reports",
+    async (phase) => {
+      await inTemporaryRoot();
+      await writeFile(
+        path.join(root!, "sedum.config.yaml"),
+        "provider: { apiKeyEnv: MODEL_KEY }\nvision: { apiKeyEnv: VISION_KEY }\nenvironments:\n  other:\n    provider: { apiKeyEnv: OTHER_KEY }\n",
+      );
+      await writeFile(
+        path.join(root!, ".env"),
+        "MODEL_KEY=model-sentinel\nVISION_KEY=vision-sentinel\nOTHER_KEY=other-sentinel\n",
+      );
+      vi.stubEnv("MODEL_KEY", "process-provider-sentinel");
+      const message =
+        "process-provider-sentinel model-sentinel vision-sentinel other-sentinel";
+      const throwing = `throw new Error(${JSON.stringify(message)});`;
+      await writeFile(
+        path.join(root!, "private.test.ts"),
+        phase === "import"
+          ? throwing
+          : `import { test } from 'sedum-cli';\ntest('throws a credential-bearing error', async () => { ${throwing} });\n`,
+      );
+      const output = await executeRunCommand({
+        ...options,
+        paths: ["private.test.ts"],
+        reporters: ["markdown"],
+      });
+      const errorText =
+        phase === "import"
+          ? output.result.discoveryProblems![0]!.message
+          : output.result.tests[0]!.attempts[0]!.steps[0]!.error!.message;
+      expect(errorText).toContain("[REDACTED]");
+      const stored = [
+        JSON.stringify(output),
+        await readFile(output.artifacts.resultPath, "utf8"),
+        await readFile(output.artifacts.progressPath, "utf8"),
+        await readFile(output.artifacts.htmlPath!, "utf8"),
+        await readFile(
+          path.join(path.dirname(output.artifacts.resultPath), "report.md"),
+          "utf8",
+        ),
+      ].join("\n");
+      for (const sentinel of message.split(" "))
+        expect(stored).not.toContain(sentinel);
+    },
+  );
 
   it("retries a failed test as a fresh numbered attempt and keeps both outcomes", async () => {
     await inTemporaryRoot();

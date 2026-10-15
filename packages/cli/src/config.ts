@@ -58,6 +58,8 @@ export interface ResolvedProjectConfig {
   readonly apiKey: string | undefined;
   readonly apiKeyEnv?: string;
   readonly visionApiKeyEnv?: string;
+  /** Integration secrets retained for redaction, never injected into tests. */
+  readonly credentialValues?: readonly string[];
   readonly cloudflareAccountId: string | undefined;
   readonly providerBaseUrl: string;
   readonly providerModel: string;
@@ -520,6 +522,7 @@ function freeze(config: ResolvedProjectConfig): ResolvedProjectConfig {
   Object.freeze(config.thresholds);
   Object.freeze(config.vision);
   Object.freeze(config.variables);
+  Object.freeze(config.credentialValues);
   return Object.freeze(config);
 }
 
@@ -962,8 +965,12 @@ export async function loadProjectConfig(
     ...fileEnvironment,
     ...hostEnvironment,
   };
+  const providerEnvironment = new Map([
+    ...Object.entries(fileEnvironment),
+    ...Object.entries(hostEnvironment).filter(([, value]) => value?.trim()),
+  ]);
   const providerValue = (name: string): string | undefined =>
-    hostEnvironment[name]?.trim() || fileEnvironment[name]?.trim() || undefined;
+    providerEnvironment.get(name)?.trim() || undefined;
   const cloudflareTokenFrom = (
     environment: Readonly<Record<string, string | undefined>>,
   ): string | undefined => {
@@ -1106,9 +1113,16 @@ export async function loadProjectConfig(
     typeof visionApiKeyEnv === "string"
       ? providerValue(visionApiKeyEnv)
       : openRouterKey;
+  const credentialValues = [apiKey, visionApiKey].filter(
+    (value) => value !== undefined,
+  );
   for (const [, settings] of credentialSettings) {
     if (typeof settings.apiKeyEnv !== "string") continue;
     const name = settings.apiKeyEnv;
+    for (const source of [hostEnvironment, fileEnvironment]) {
+      const value = Object.hasOwn(source, name) ? source[name] : undefined;
+      if (value?.trim()) credentialValues.push(value, value.trim());
+    }
     variables[name] = undefined;
     for (const [prefix, values] of [
       ["variables", rootVariables],
@@ -1250,6 +1264,7 @@ export async function loadProjectConfig(
     variables,
     providerName,
     apiKey,
+    credentialValues,
     ...(typeof apiKeyEnv === "string" ? { apiKeyEnv } : {}),
     ...(typeof visionApiKeyEnv === "string" ? { visionApiKeyEnv } : {}),
     cloudflareAccountId,

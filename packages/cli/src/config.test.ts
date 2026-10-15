@@ -23,6 +23,33 @@ afterEach(async () => {
 });
 
 describe("project configuration", () => {
+  it.each(["constructor", "toString", "__proto__"])(
+    "resolves the valid credential name %s without inherited properties",
+    async (name) => {
+      const root = await temporaryRoot();
+      await writeFile(
+        path.join(root, "sedum.config.yaml"),
+        `provider: { apiKeyEnv: ${name} }\nvision: { apiKeyEnv: ${name} }\n`,
+      );
+      const offline = await loadProjectConfig(
+        root,
+        {},
+        {},
+        { readEnvironmentFile: false },
+      );
+      expect(offline.apiKey).toBeUndefined();
+      expect(offline.visionApiKey).toBeUndefined();
+      await writeFile(path.join(root, ".env"), `${name}=file-sentinel\n`);
+      const fromFile = await loadProjectConfig(root, {});
+      expect(fromFile.apiKey).toBe("file-sentinel");
+      expect(fromFile.visionApiKey).toBe("file-sentinel");
+      const fromProcess = await loadProjectConfig(root, {
+        [name]: "process-sentinel",
+      });
+      expect(fromProcess.apiKey).toBe("process-sentinel");
+    },
+  );
+
   it.each(["typesafe", "openrouter", "clef"])(
     "resolves custom %s and vision keys with environment and source precedence",
     async (name) => {

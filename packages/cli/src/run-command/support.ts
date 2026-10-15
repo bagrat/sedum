@@ -55,10 +55,13 @@ export function safeDiscoveryText(
   return safeText(
     withoutUrls,
     {
-      secretValues: Object.values(config.variables).filter(
-        (entry): entry is string =>
-          typeof entry === "string" && entry.length >= 4,
-      ),
+      secretValues: [
+        ...(config.credentialValues ?? []),
+        ...Object.values(config.variables).filter(
+          (entry): entry is string =>
+            typeof entry === "string" && entry.length >= 4,
+        ),
+      ],
     },
     512,
   );
