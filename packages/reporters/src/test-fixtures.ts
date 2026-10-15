@@ -333,9 +333,7 @@ export async function visionReport(): Promise<RunResult> {
           outcome,
           reason: "repeated_member_no_evidence",
           elapsedMs: 2345,
-          ...(outcome === "failed"
-            ? { failure: "http_error", httpStatus: 429 }
-            : {}),
+          ...(outcome === "failed" ? { failure: "timeout" } : {}),
         },
       },
       calls: [
@@ -343,8 +341,8 @@ export async function visionReport(): Promise<RunResult> {
         {
           ...modelCall,
           modality: "vision",
-          model: "google/gemini-3.8-flash",
-          requestedModel: "google/gemini-3.8-flash",
+          model: "jev-1.14.0",
+          requestedModel: "jev-1.14.0",
           inputTokens: index === 1 ? 100 : index === 2 ? 170 : 230,
           outputTokens: index === 1 ? 11 : index === 2 ? 0 : 23,
           inputUsdPerMillion: null,
@@ -356,7 +354,7 @@ export async function visionReport(): Promise<RunResult> {
       ],
       error:
         outcome === "failed"
-          ? { code: "ambiguous", message: "Vision HTTP 429" }
+          ? { code: "ambiguous", message: "Vision timeout" }
           : null,
       evidence: { status: "omitted", reason: "disabled" },
       replayFrame: null,

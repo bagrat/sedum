@@ -102,16 +102,20 @@ export const ResultLocatorSchema = z.strictObject({
         .enum([
           "timeout",
           "canceled",
-          "http_error",
           "connection",
+          "invalid_input",
+          "invalid_response",
+          "unknown",
+          "stale_page",
+          // Written by the OpenRouter vision resolver, before Jev.
+          "http_error",
           "invalid_envelope",
           "invalid_json",
           "invalid_selection",
           "truncated_response",
-          "unknown",
-          "stale_page",
         ])
         .optional(),
+      /** Written by the OpenRouter vision resolver, before Jev. */
       httpStatus: z.number().int().min(100).max(599).optional(),
     })
     .optional(),
@@ -277,11 +281,12 @@ export const ResultExecutionSchema = z.strictObject({
     })
     .nullable(),
   providerConcurrency: z.number().int().positive(),
-  /** Present when vision fallback is enabled; `key` is checked before tests run. */
+  /** Present when vision fallback is enabled. */
   vision: z
     .strictObject({
       model: z.string().min(1).max(200),
-      key: z.enum(["accepted", "rejected", "unreachable"]),
+      /** The OpenRouter key check, written before vision used Jev. */
+      key: z.enum(["accepted", "rejected", "unreachable"]).optional(),
     })
     .optional(),
 });

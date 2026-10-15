@@ -24,6 +24,8 @@ import type {
   TargetChecker,
   TargetCheckDecision,
   TargetCheckInput,
+  VisionObservation,
+  VisionResolver,
 } from "@sedum-dev/core";
 import {
   MODEL_CHOICES,
@@ -61,8 +63,12 @@ import { ProviderGate } from "./gate.js";
 import { askProvider } from "./request-lifecycle.js";
 import {
   buildTargetCheckRequest,
+  buildVisionRequest,
+  COUNT,
   IMAGE_MODEL,
+  VISION_ABSTAIN,
   withScreenshot,
+  type ImageRequest,
 } from "./images.js";
 export { IMAGE_MODEL } from "./images.js";
 import { buildGoalRequest, validateGoalDecision } from "./goal-request.js";
@@ -211,11 +217,37 @@ function imageRejection(error: unknown): boolean {
   return error instanceof ProviderError && error.code === "invalid-input";
 }
 
+/**
+ * Vision picks a control only when Jev is sure of it and sure that some
+ * element fits. Chosen on the sedum-evals development split, where argmax
+ * alone clicked look-alikes for steps whose target was absent.
+ */
+const VISION_MIN_PROBABILITY = 0.9;
+const VISION_MAX_NONE = 0.3;
+const VISION_MAX_SEVERAL = 0.5;
+
+function visionDecision(
+  target: ReturnType<typeof validateChoice>,
+  count: Readonly<Record<string, number>>,
+): { kind: "candidate"; id: string } | { kind: "abstain"; reason: string } {
+  const pick = target.choice;
+  if (Object.hasOwn(VISION_ABSTAIN, pick))
+    return { kind: "abstain", reason: pick };
+  if (count.several! >= VISION_MAX_SEVERAL)
+    return { kind: "abstain", reason: "ambiguous" };
+  if (count.none! >= VISION_MAX_NONE)
+    return { kind: "abstain", reason: "no_match" };
+  if (target.probabilities[pick]! < VISION_MIN_PROBABILITY)
+    return { kind: "abstain", reason: "uncertain" };
+  return { kind: "candidate", id: pick };
+}
+
 export class TypeSafeAdapter
   implements
     Resolver,
     Judge,
     TargetChecker,
+    VisionResolver,
     ClassificationProvider,
     RelevanceProvider,
     ExplorationAdvisor,
@@ -376,10 +408,26 @@ export class TypeSafeAdapter
     options: ProviderCallOptions | undefined,
     validate: (response: unknown) => T,
   ) {
-    const { response, meta } = await this.ask(request, options);
-    const call = validateCall(response, meta, this.model, this.estimateJevCost);
+    return this.validated(
+      await this.ask(request, options),
+      this.model,
+      validate,
+    );
+  }
+
+  private validated<T extends object>(
+    asked: { response: unknown; meta: CallMeta },
+    model: string,
+    validate: (response: unknown) => T,
+  ): T & { call: ReturnType<typeof validateCall> } {
+    const call = validateCall(
+      asked.response,
+      asked.meta,
+      model,
+      this.estimateJevCost,
+    );
     try {
-      return { ...validate(response), call };
+      return { ...validate(asked.response), call };
     } catch (error) {
       throw responseError(error, call.attempts, call);
     }
@@ -501,42 +549,69 @@ export class TypeSafeAdapter
     }
   }
 
-  /** Whether the outlined target is the step's only fit, from a screenshot. */
-  async checkTarget(
-    input: TargetCheckInput,
-    options?: ProviderCallOptions,
-  ): Promise<TargetCheckDecision> {
+  /** Image requests stop for the run once the service rejects one. */
+  private async askImage(request: ImageRequest, options?: ProviderCallOptions) {
     if (this.imagesRejected)
       throw new ProviderError(
         "invalid-input",
         "The provider rejected an earlier image request.",
       );
-    const request = buildTargetCheckRequest(input, this.imageModel);
-    let asked;
     try {
-      asked = await this.ask(request, options);
+      return await this.ask(request, options);
     } catch (error) {
       if (imageRejection(error)) this.imagesRejected = true;
       throw error;
     }
-    const { response, meta } = asked;
-    const call = validateCall(
-      response,
-      meta,
+  }
+
+  /** Whether the outlined target is the step's only fit, from a screenshot. */
+  async checkTarget(
+    input: TargetCheckInput,
+    options?: ProviderCallOptions,
+  ): Promise<TargetCheckDecision> {
+    const request = buildTargetCheckRequest(input, this.imageModel);
+    return this.validated(
+      await this.askImage(request, options),
       this.imageModel,
-      this.estimateJevCost,
+      (response) => {
+        const answers = answersOf(response);
+        const count = validateChoice(answers.count, Object.keys(COUNT));
+        return {
+          match: validateNoul(answers.match),
+          several: count.probabilities.several!,
+        };
+      },
     );
-    try {
-      const answers = answersOf(response);
-      const count = validateChoice(answers.count, ["none", "one", "several"]);
-      return {
-        match: validateNoul(answers.match),
-        several: count.probabilities.several!,
-        call,
-      };
-    } catch (error) {
-      throw responseError(error, call.attempts, call);
-    }
+  }
+
+  /**
+   * Vision fallback: which labelled control on the screenshot the click
+   * means. With vision on, clicks never fall back to a permissive pick, so
+   * vision neither reads nor sets the run-wide image latch: a rejected
+   * Judge or check screenshot must not turn vision off for the rest of the
+   * run, and one rejected vision request fails only its own step.
+   */
+  async chooseFromScreenshot(
+    observation: VisionObservation,
+    options?: ProviderCallOptions,
+  ) {
+    const { request, optionIds } = buildVisionRequest(
+      observation,
+      this.imageModel,
+    );
+    return this.validated(
+      await this.ask(request, options),
+      this.imageModel,
+      (response) => {
+        const answers = answersOf(response);
+        return {
+          decision: visionDecision(
+            validateChoice(answers.target, optionIds),
+            validateChoice(answers.count, Object.keys(COUNT)).probabilities,
+          ),
+        };
+      },
+    );
   }
 
   /** Bug-detector questions about one page state, answered in one call. */

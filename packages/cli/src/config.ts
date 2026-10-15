@@ -35,7 +35,6 @@ export interface ProjectConfigOverrides {
   readonly baseUrl?: string;
   readonly vision?: {
     readonly enabled?: boolean;
-    readonly model?: string;
   };
   readonly screenshots?: boolean;
 }
@@ -60,12 +59,8 @@ export interface ResolvedProjectConfig {
   readonly cloudflareAccountId: string | undefined;
   readonly providerBaseUrl: string;
   readonly providerModel: string;
-  readonly vision: {
-    readonly enabled: boolean;
-    readonly model: string;
-    readonly timeoutMs: number;
-  };
-  readonly visionApiKey: string | undefined;
+  /** Ask the provider's image model about ambiguous or unmatched clicks. */
+  readonly vision: { readonly enabled: boolean };
   /**
    * Send viewport screenshots to the provider (TypeSafe images preview): a
    * visual check of each model-resolved target, and the Judge's evidence.
@@ -107,11 +102,7 @@ const DEFAULTS = {
   },
   outputDir: ".sedum/runs",
   reporterDir: ".sedum/reports",
-  vision: {
-    enabled: false,
-    model: "google/gemini-3.8-flash",
-    timeoutMs: 10_000,
-  },
+  vision: { enabled: false },
 };
 
 export const DEFAULT_PROVIDER_BASE_URL = "https://api.typesafe.ai";
@@ -139,7 +130,7 @@ const allowed = {
   viewport: new Set(["width", "height"]),
   thresholds: new Set(["verify", "lowConfidenceBand", "contradiction"]),
   environment: new Set(["baseUrl", "variables"]),
-  vision: new Set(["enabled", "model", "timeoutMs"]),
+  vision: new Set(["enabled"]),
   provider: new Set(["name", "model"]),
 };
 
@@ -171,6 +162,37 @@ function diagnostic(
   });
 }
 
+/** Keys that once configured the OpenRouter vision resolver. */
+const REMOVED_KEYS: Readonly<Record<string, string>> = {
+  "vision.model":
+    "Vision fallback now uses the TypeSafe provider's image model.",
+  "vision.timeoutMs":
+    "Vision fallback now uses the TypeSafe provider's request deadline.",
+};
+
+/** The diagnostic code, message and fix for a key that is not allowed. */
+function keyProblem(
+  path: string,
+  key: string,
+  names: ReadonlySet<string>,
+): readonly [string, string, string] | null {
+  const removed = Object.hasOwn(REMOVED_KEYS, path)
+    ? REMOVED_KEYS[path]
+    : undefined;
+  if (removed)
+    return [
+      "removed_config_key",
+      `Configuration key \`${path}\` was removed. ${removed}`,
+      `Delete \`${path}\` from ${CONFIG_FILE}.`,
+    ];
+  if (names.has(key)) return null;
+  return [
+    "unknown_config_key",
+    `Unknown configuration key \`${path}\`.`,
+    keyFix(key, names),
+  ];
+}
+
 function mapUnknownKeys(
   value: unknown,
   names: ReadonlySet<string>,
@@ -182,16 +204,16 @@ function mapUnknownKeys(
   if (!isMap(value)) return;
   for (const pair of value.items) {
     const key = String(pair.key);
-    if (!names.has(key))
+    const path = prefix ? `${prefix}.${key}` : key;
+    const problem = keyProblem(path, key, names);
+    if (problem)
       diagnostic(
         diagnostics,
         file,
         counter,
         pair.key as Node,
-        prefix ? `${prefix}.${key}` : key,
-        "unknown_config_key",
-        `Unknown configuration key \`${prefix ? `${prefix}.` : ""}${key}\`.`,
-        keyFix(key, names),
+        path,
+        ...problem,
       );
   }
 }
@@ -1037,7 +1059,6 @@ export async function loadProjectConfig(
         "CLOUDFLARE_ACCOUNT_ID must be exactly 32 hexadecimal characters.",
       fix: "Copy the account ID from the Cloudflare dashboard.",
     });
-  const visionApiKey = openRouterKey;
   variables["OPENROUTER_API_KEY"] = undefined;
   // Credentials configure integrations; they are not test variables and must
   // not be forwarded through the flow environment.
@@ -1076,34 +1097,6 @@ export async function loadProjectConfig(
       ? screenshotsValue
       : providerName === "typesafe" &&
         providerBaseUrl === DEFAULT_PROVIDER_BASE_URL;
-  const visionModelValue = overrides.vision?.model ?? vision.model;
-  const visionModel = visionModelValue ?? DEFAULTS.vision.model;
-  if (typeof visionModel !== "string" || !visionModel.trim())
-    diagnostic(
-      diagnostics,
-      file,
-      counter,
-      node("vision.model"),
-      "vision.model",
-      "invalid_config_type",
-      "Configuration key `vision.model` must be nonempty text.",
-      `Use a model such as \`${DEFAULTS.vision.model}\`.`,
-    );
-  const visionTimeoutValue = vision.timeoutMs ?? DEFAULTS.vision.timeoutMs;
-  if (
-    !Number.isSafeInteger(visionTimeoutValue) ||
-    (visionTimeoutValue as number) < 1
-  )
-    diagnostic(
-      diagnostics,
-      file,
-      counter,
-      node("vision.timeoutMs"),
-      "vision.timeoutMs",
-      "invalid_config_type",
-      "Configuration key `vision.timeoutMs` must be a positive integer.",
-      "Use a timeout such as `10000`.",
-    );
   const testDirectory = relativePath(
     found.root,
     tests.directory,
@@ -1174,19 +1167,7 @@ export async function loadProjectConfig(
     cloudflareAccountId,
     providerBaseUrl,
     providerModel,
-    vision: {
-      enabled: visionEnabled === true,
-      model:
-        typeof visionModel === "string" && visionModel.trim()
-          ? visionModel
-          : DEFAULTS.vision.model,
-      timeoutMs:
-        Number.isSafeInteger(visionTimeoutValue) &&
-        (visionTimeoutValue as number) > 0
-          ? (visionTimeoutValue as number)
-          : DEFAULTS.vision.timeoutMs,
-    },
-    visionApiKey,
+    vision: { enabled: visionEnabled === true },
     screenshots: screenshots && providerName !== "clef",
   });
 }

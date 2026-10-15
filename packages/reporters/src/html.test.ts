@@ -134,9 +134,9 @@ describe("HTML report", () => {
     for (const output of [html, markdown]) {
       for (const outcome of ["selected", "abstained", "failed"])
         expect(output).toContain(`Vision fallback: ${outcome}`);
-      expect(output).toContain("google/gemini-3.8-flash");
+      expect(output).toContain("jev-1.14.0");
       expect(output).toContain("2345 ms");
-      expect(output).toContain("HTTP 429");
+      expect(output).toContain("· timeout");
       expect(output).toContain(
         "Vision models: 3 calls · 500 input tokens · 34 output tokens · known subtotal $0.005000; 1 call with unknown cost",
       );

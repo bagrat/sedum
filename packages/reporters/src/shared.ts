@@ -22,8 +22,7 @@ export function visionSummary(step: ResultStep): string | null {
     (vision.abstentionReason
       ? ` · abstention: ${vision.abstentionReason}`
       : "") +
-    (vision.failure ? ` · ${vision.failure}` : "") +
-    (vision.httpStatus ? ` · HTTP ${vision.httpStatus}` : "")
+    (vision.failure ? ` · ${vision.failure}` : "")
   );
 }
 

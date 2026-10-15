@@ -1,12 +1,10 @@
 import {
   DEFAULT_PROVIDER_CONCURRENCY,
   FileClassificationCache,
-  OpenRouterVisionResolver,
   PlaywrightBrowserDriver,
   ProviderGate,
   ReusableBrowserDriver,
   isScriptTestFile,
-  probeOpenRouterKey,
   runFlow,
   runScriptTest,
   type BugDetector,
@@ -14,7 +12,7 @@ import {
   type TargetChecker,
   type RejectionRouter,
   type RunRecorder,
-  type VisionKeyProbe,
+  type VisionResolver,
 } from "@sedum-dev/core";
 import { availableParallelism } from "node:os";
 import path from "node:path";
@@ -73,7 +71,7 @@ interface ExecutionResources {
     ReturnType<typeof FileClassificationCache.load>
   >;
   readonly locatorCache: Awaited<ReturnType<typeof openLocatorCache>>;
-  readonly visionResolver?: OpenRouterVisionResolver;
+  readonly visionResolver?: VisionResolver;
   readonly detector?: BugDetector;
   readonly screenshots: NonNullable<FlowRunnerDependencies["screenshots"]>;
 }
@@ -94,8 +92,12 @@ export async function executeSelectedTests(
   const providerConcurrency =
     request.options.providerConcurrency ??
     Math.min(DEFAULT_PROVIDER_CONCURRENCY, lanes * 2);
-  const visionKey = await probeVision(request.config, request.options);
-  await selectTests(request, lanes, providerConcurrency, visionKey);
+  await selectTests(
+    request,
+    lanes,
+    providerConcurrency,
+    await visionModel(request.config),
+  );
   if (request.signal.aborted) throw new Error("canceled");
 
   const gate = new ProviderGate({ concurrency: providerConcurrency });
@@ -126,21 +128,20 @@ export async function executeSelectedTests(
   return outcome;
 }
 
-async function probeVision(
+/** The model that answers vision fallback requests, when vision is on. */
+async function visionModel(
   config: ResolvedProjectConfig,
-  options: RunCommandOptions,
-): Promise<VisionKeyProbe | null> {
+): Promise<string | null> {
   if (!config.vision.enabled) return null;
-  return (options.probeVisionKey ?? probeOpenRouterKey)(
-    config.visionApiKey!,
-  ).catch((): VisionKeyProbe => "unreachable");
+  const { IMAGE_MODEL } = await import("@sedum-dev/provider-typesafe");
+  return IMAGE_MODEL;
 }
 
 async function selectTests(
   request: TestExecutionRequest,
   lanes: number,
   providerConcurrency: number,
-  visionKey: VisionKeyProbe | null,
+  visionModel: string | null,
 ): Promise<void> {
   await request.recorder.selectTests(request.files.length, {
     parallel: { requested: request.options.parallel ?? 1, lanes },
@@ -151,9 +152,7 @@ async function selectTests(
         }
       : null,
     providerConcurrency,
-    ...(visionKey
-      ? { vision: { model: request.config.vision.model, key: visionKey } }
-      : {}),
+    ...(visionModel ? { vision: { model: visionModel } } : {}),
   });
   if (request.discoveryProblems.length)
     await request.recorder.addDiscoveryProblems(request.discoveryProblems);
@@ -180,16 +179,20 @@ async function createExecutionResources(
       env: process.env,
     }),
     screenshots: screenshotOptions(config, provider),
-    ...(config.vision.enabled
-      ? {
-          visionResolver: new OpenRouterVisionResolver({
-            apiKey: config.visionApiKey!,
-            model: config.vision.model,
-            timeoutMs: config.vision.timeoutMs,
-          }),
-        }
-      : {}),
+    ...visionOption(config, provider),
   };
+}
+
+/** Vision fallback asks the run's provider, which must read screenshots. */
+function visionOption(
+  config: ResolvedProjectConfig,
+  provider: ExecutionResources["provider"],
+): { readonly visionResolver?: VisionResolver } {
+  return config.vision.enabled &&
+    config.screenshots &&
+    "chooseFromScreenshot" in provider
+    ? { visionResolver: provider as typeof provider & VisionResolver }
+    : {};
 }
 
 /** Screenshots go only to a provider that can check targets from them. */

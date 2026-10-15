@@ -3,14 +3,29 @@ import { sameVersion } from "./candidates.js";
 import type { LocatorDiagnostic, LocatorResult } from "../locator.js";
 import { pageVersion } from "../page-bridge.js";
 import type { Candidate, CandidatePage } from "../page-protocol.js";
-import { unknownCostCall, type ProviderCall } from "../provider.js";
+import {
+  isRunWideProviderError,
+  ProviderError,
+  unknownCostCall,
+  type ProviderCall,
+  type ProviderErrorCode,
+} from "../provider.js";
 import {
   captureVisionObservation,
-  VisionRequestError,
+  type VisionFailure,
   type VisionResolver,
 } from "../vision.js";
 
 type VisionDiagnostic = NonNullable<LocatorDiagnostic["vision"]>;
+
+const FAILURES: Partial<Record<ProviderErrorCode, VisionFailure>> = {
+  timeout: "timeout",
+  connection: "connection",
+  "retry-exhausted": "connection",
+  "invalid-input": "invalid_input",
+  "unsupported-input": "invalid_input",
+  "invalid-response": "invalid_response",
+};
 
 export interface VisionFallbackContext {
   readonly page: BrowserPage;
@@ -44,7 +59,8 @@ export class VisionFallback {
     if (!this.available(members)) return this.context.unresolved("ambiguous");
     try {
       return await this.captureAndResolve();
-    } catch {
+    } catch (error) {
+      if (isRunWideProviderError(error)) throw error;
       return this.captureFailure("vision_unavailable");
     }
   }
@@ -72,17 +88,21 @@ export class VisionFallback {
     return this.validateResponse(captured, response.answer, response.started);
   }
 
-  private async request(observation: Parameters<VisionResolver["choose"]>[0]) {
+  private async request(
+    observation: Parameters<VisionResolver["chooseFromScreenshot"]>[0],
+  ) {
     const context = this.context;
     const started = performance.now();
     try {
-      const answer = await context.resolver!.choose(observation, {
+      const answer = await context.resolver!.chooseFromScreenshot(observation, {
         signal: context.signal,
       });
       context.calls.push({ ...answer.call, modality: "vision" });
       return { answer, started };
     } catch (error) {
       context.calls.push({ ...unknownCostCall(error), modality: "vision" });
+      // A rejected key or exhausted rate limit hits every later request too.
+      if (isRunWideProviderError(error)) throw error;
       context.updateDiagnostic(this.requestFailure(error, started));
       context.updateGate(suffixedGate(context, "vision_error"));
       return { result: context.unresolved("ambiguous") };
@@ -90,21 +110,14 @@ export class VisionFallback {
   }
 
   private requestFailure(error: unknown, started: number): VisionDiagnostic {
-    const base =
-      error instanceof VisionRequestError
-        ? {
-            elapsedMs: error.elapsedMs,
-            failure: error.failure,
-            ...(error.httpStatus !== undefined
-              ? { httpStatus: error.httpStatus }
-              : {}),
-          }
-        : {
-            elapsedMs: performance.now() - started,
-            failure: "unknown" as const,
-          };
+    const failure = this.context.signal.aborted
+      ? "canceled"
+      : error instanceof ProviderError
+        ? (FAILURES[error.code] ?? "unknown")
+        : "unknown";
     return {
-      ...base,
+      elapsedMs: performance.now() - started,
+      failure,
       outcome: "failed",
       reason: this.context.gate() ?? "ambiguous",
     };
@@ -112,7 +125,7 @@ export class VisionFallback {
 
   private async validateResponse(
     captured: Awaited<ReturnType<typeof captureVisionObservation>> & {},
-    answer: Awaited<ReturnType<VisionResolver["choose"]>>,
+    answer: Awaited<ReturnType<VisionResolver["chooseFromScreenshot"]>>,
     started: number,
   ): Promise<LocatorResult> {
     const context = this.context;

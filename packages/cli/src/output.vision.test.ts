@@ -29,17 +29,14 @@ const click: ResultStep = {
   targetBox: null,
 };
 
-async function render(
-  steps: ResultStep[],
-  key: "accepted" | "rejected" = "accepted",
-) {
+async function render(steps: ResultStep[]) {
   const recorder = new RunRecorder(async () => undefined, "vision-summary");
   await recorder.start();
   await recorder.selectTests(1, {
     parallel: { requested: 1, lanes: 1 },
     shard: null,
     providerConcurrency: 2,
-    vision: { model: "vision-model", key },
+    vision: { model: "vision-model" },
   });
   await recorder.startTest({ id: "test", file: "vision.test.yaml" });
   for (const [index, step] of steps.entries()) {
@@ -118,31 +115,5 @@ describe("vision execution summary", () => {
     expect(output).toContain(
       "attempted on 2 step(s); 0 selected, 0 abstained, 1 failed, 1 outcome unrecorded",
     );
-  });
-
-  it("reports a rejected-key request as failed, not successful use", async () => {
-    const output = await render(
-      [
-        {
-          ...click,
-          locator: {
-            ...click.locator!,
-            vision: {
-              outcome: "failed",
-              elapsedMs: 10,
-              failure: "http_error",
-              httpStatus: 401,
-            },
-          },
-        },
-      ],
-      "rejected",
-    );
-    expect(output).toContain(
-      "attempted on 1 step(s); 0 selected, 0 abstained, 1 failed",
-    );
-    expect(output).toContain("OpenRouter rejected OPEN_ROUTER_API_KEY");
-    expect(output).not.toContain("used on");
-    expect(output).not.toContain("vision not attempted on");
   });
 });

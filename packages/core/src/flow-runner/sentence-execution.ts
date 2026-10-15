@@ -661,9 +661,13 @@ export async function executeSentence(
       !(report && safeUrl(page.url, report.privacy).sensitive)
         ? {
             visionResolver: {
-              choose: (...args: Parameters<VisionResolver["choose"]>) => {
+              chooseFromScreenshot: (
+                ...args: Parameters<VisionResolver["chooseFromScreenshot"]>
+              ) => {
                 visionAttempted = true;
-                return dependencies.visionResolver!.choose(...args);
+                return dependencies.visionResolver!.chooseFromScreenshot(
+                  ...args,
+                );
               },
             },
           }

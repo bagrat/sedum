@@ -81,7 +81,7 @@ describe("vision fallback feedback", () => {
         repoRoot: root,
         browser: { launch: vi.fn(async () => session) } as never,
         provider: { classifyBatch: vi.fn(), choose, holds: vi.fn() },
-        visionResolver: { choose: vision },
+        visionResolver: { chooseFromScreenshot: vision },
         classificationCache: new NoopClassificationCache(),
         env: {},
         baseUrl: version.route,
