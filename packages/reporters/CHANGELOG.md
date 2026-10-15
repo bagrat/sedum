@@ -1,5 +1,15 @@
 # @sedum-dev/reporters
 
+## 0.1.0-alpha.15
+
+### Patch Changes
+
+- 92062ac: Show each `sedum explore` finding with the frame of the page it was seen on. A page check (`--detect semantic`) judges the page before the step's action, but `report.html` and `report.md` showed the page after it: a "stuck_loading on /checkout" finding showed the Orders page the step clicked through to. Findings in `result.json` now carry that `frame`.
+- Updated dependencies [92062ac]
+- Updated dependencies [00f845c]
+- Updated dependencies [7577020]
+  - @sedum-dev/core@0.1.0-alpha.15
+
 ## 0.1.0-alpha.14
 
 ### Minor Changes
