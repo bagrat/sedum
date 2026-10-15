@@ -56,6 +56,10 @@ export interface ResolvedProjectConfig {
   readonly variables: Readonly<Record<string, string | undefined>>;
   readonly providerName: "typesafe" | "clef" | "openrouter";
   readonly apiKey: string | undefined;
+  readonly apiKeyEnv?: string;
+  readonly visionApiKeyEnv?: string;
+  /** Integration secrets retained for redaction, never injected into tests. */
+  readonly credentialValues?: readonly string[];
   readonly cloudflareAccountId: string | undefined;
   readonly providerBaseUrl: string;
   readonly providerModel: string;
@@ -70,6 +74,8 @@ export interface ResolvedProjectConfig {
 interface RawEnvironment {
   readonly baseUrl?: unknown;
   readonly variables?: unknown;
+  readonly provider?: unknown;
+  readonly vision?: unknown;
 }
 
 interface RawConfig extends RawEnvironment {
@@ -129,9 +135,9 @@ const allowed = {
   affected: new Set(["ignore"]),
   viewport: new Set(["width", "height"]),
   thresholds: new Set(["verify", "lowConfidenceBand", "contradiction"]),
-  environment: new Set(["baseUrl", "variables"]),
-  vision: new Set(["enabled", "model", "timeoutMs"]),
-  provider: new Set(["name", "model"]),
+  environment: new Set(["baseUrl", "variables", "provider", "vision"]),
+  vision: new Set(["enabled", "model", "timeoutMs", "apiKeyEnv"]),
+  provider: new Set(["name", "model", "apiKeyEnv"]),
 };
 
 function source(
@@ -516,6 +522,7 @@ function freeze(config: ResolvedProjectConfig): ResolvedProjectConfig {
   Object.freeze(config.thresholds);
   Object.freeze(config.vision);
   Object.freeze(config.variables);
+  Object.freeze(config.credentialValues);
   return Object.freeze(config);
 }
 
@@ -713,6 +720,10 @@ export async function loadProjectConfig(
   const environments = object(raw.environments) ? raw.environments : {};
   const vision = object(raw.vision) ? raw.vision : {};
   const provider = object(raw.provider) ? raw.provider : {};
+  const credentialSettings = [
+    ["provider", provider],
+    ["vision", vision],
+  ] as [string, Record<string, unknown>][];
   for (const [name, value] of Object.entries(environments)) {
     if (!object(value)) {
       diagnostic(
@@ -726,6 +737,30 @@ export async function loadProjectConfig(
         `Write \`environments.${name}: { baseUrl: https://example.com/ }\`.`,
       );
       continue;
+    }
+    for (const section of ["provider", "vision"]) {
+      const key = `environments.${name}.${section}`;
+      const settings = value[section];
+      mapUnknownKeys(
+        node(key),
+        new Set(["apiKeyEnv"]),
+        key,
+        file,
+        counter,
+        diagnostics,
+      );
+      if (settings !== undefined && !object(settings))
+        diagnostic(
+          diagnostics,
+          file,
+          counter,
+          node(key),
+          key,
+          "invalid_config_type",
+          `Configuration key \`${key}\` must be a mapping.`,
+          `Write \`${key}: { apiKeyEnv: MY_API_KEY }\`.`,
+        );
+      if (object(settings)) credentialSettings.push([key, settings]);
     }
     scalarVariables(
       value.variables,
@@ -765,6 +800,29 @@ export async function loadProjectConfig(
   const environment = object(selectedRaw)
     ? (selectedRaw as RawEnvironment)
     : {};
+  for (const [prefix, settings] of credentialSettings) {
+    const value = settings.apiKeyEnv;
+    if (
+      value !== undefined &&
+      (typeof value !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(value))
+    )
+      diagnostic(
+        diagnostics,
+        file,
+        counter,
+        node(`${prefix}.apiKeyEnv`),
+        `${prefix}.apiKeyEnv`,
+        "invalid_config_env_name",
+        `Configuration key \`${prefix}.apiKeyEnv\` must be a valid environment variable name.`,
+        "Use letters, digits, and underscores, starting with a letter or underscore.",
+      );
+  }
+  const selectedProvider = object(environment.provider)
+    ? environment.provider
+    : {};
+  const selectedVision = object(environment.vision) ? environment.vision : {};
+  const apiKeyEnv = selectedProvider.apiKeyEnv ?? provider.apiKeyEnv;
+  const visionApiKeyEnv = selectedVision.apiKeyEnv ?? vision.apiKeyEnv;
 
   const browserValue = overrides.browser ?? raw.browser ?? DEFAULTS.browser;
   const browser =
@@ -907,8 +965,12 @@ export async function loadProjectConfig(
     ...fileEnvironment,
     ...hostEnvironment,
   };
+  const providerEnvironment = new Map([
+    ...Object.entries(fileEnvironment),
+    ...Object.entries(hostEnvironment).filter(([, value]) => value?.trim()),
+  ]);
   const providerValue = (name: string): string | undefined =>
-    hostEnvironment[name]?.trim() || fileEnvironment[name]?.trim() || undefined;
+    providerEnvironment.get(name)?.trim() || undefined;
   const cloudflareTokenFrom = (
     environment: Readonly<Record<string, string | undefined>>,
   ): string | undefined => {
@@ -1020,12 +1082,14 @@ export async function loadProjectConfig(
   const openRouterKey =
     openRouterKeyFrom(hostEnvironment) ?? openRouterKeyFrom(fileEnvironment);
   const apiKey =
-    providerName === "clef"
-      ? (cloudflareTokenFrom(hostEnvironment) ??
-        cloudflareTokenFrom(fileEnvironment))
-      : providerName === "openrouter"
-        ? openRouterKey
-        : providerValue("TYPESAFE_API_KEY");
+    typeof apiKeyEnv === "string"
+      ? providerValue(apiKeyEnv)
+      : providerName === "clef"
+        ? (cloudflareTokenFrom(hostEnvironment) ??
+          cloudflareTokenFrom(fileEnvironment))
+        : providerName === "openrouter"
+          ? openRouterKey
+          : providerValue("TYPESAFE_API_KEY");
   const cloudflareAccountId =
     providerName === "clef"
       ? providerValue("CLOUDFLARE_ACCOUNT_ID")
@@ -1045,7 +1109,46 @@ export async function loadProjectConfig(
         "CLOUDFLARE_ACCOUNT_ID must be exactly 32 hexadecimal characters.",
       fix: "Copy the account ID from the Cloudflare dashboard.",
     });
-  const visionApiKey = openRouterKey;
+  const visionApiKey =
+    typeof visionApiKeyEnv === "string"
+      ? providerValue(visionApiKeyEnv)
+      : openRouterKey;
+  const credentialValues = [apiKey, visionApiKey].filter(
+    (value) => value !== undefined,
+  );
+  for (const [, settings] of credentialSettings) {
+    if (typeof settings.apiKeyEnv !== "string") continue;
+    const name = settings.apiKeyEnv;
+    for (const source of [hostEnvironment, fileEnvironment]) {
+      const value = Object.hasOwn(source, name) ? source[name] : undefined;
+      if (value?.trim()) credentialValues.push(value, value.trim());
+    }
+    variables[name] = undefined;
+    for (const [prefix, values] of [
+      ["variables", rootVariables],
+      ...Object.entries(environments)
+        .filter(([, value]) => object(value))
+        .map(
+          ([key, value]) =>
+            [
+              `environments.${key}.variables`,
+              (value as RawEnvironment).variables,
+            ] as const,
+        ),
+    ] as const) {
+      if (object(values) && Object.hasOwn(values, name))
+        diagnostic(
+          diagnostics,
+          file,
+          counter,
+          node(prefix),
+          `${prefix}.${name}`,
+          "api_key_in_config",
+          `${name} must not be stored in sedum.config.yaml.`,
+          `Put ${name} in the project-root .env or invoking process environment.`,
+        );
+    }
+  }
   variables["OPENROUTER_API_KEY"] = undefined;
   // Credentials configure integrations; they are not test variables and must
   // not be forwarded through the flow environment.
@@ -1161,6 +1264,9 @@ export async function loadProjectConfig(
     variables,
     providerName,
     apiKey,
+    credentialValues,
+    ...(typeof apiKeyEnv === "string" ? { apiKeyEnv } : {}),
+    ...(typeof visionApiKeyEnv === "string" ? { visionApiKeyEnv } : {}),
     cloudflareAccountId,
     providerBaseUrl,
     providerModel,

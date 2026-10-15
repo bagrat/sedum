@@ -383,7 +383,7 @@ async function handleRunError(
     return progressWriteFailure(session, error);
   const diagnostic = deadline.signal.aborted
     ? interruptionConclusion(deadline.timedOut).diagnostic
-    : setupDiagnostic(error, config.providerName);
+    : setupDiagnostic(error, config.providerName, config.apiKeyEnv);
   return finishUnexpectedError(session, deadline, diagnostic);
 }
 

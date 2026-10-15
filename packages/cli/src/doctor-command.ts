@@ -57,6 +57,7 @@ export interface DoctorProbes {
 }
 
 export interface DoctorOptions {
+  readonly environment?: string;
   /** Check the vision fallback's OpenRouter key even when config leaves it off. */
   readonly vision?: boolean;
 }
@@ -171,7 +172,13 @@ export async function executeDoctorCommand(
 
   let config: ResolvedProjectConfig | null = null;
   try {
-    config = await (probes.loadConfig ?? loadProjectConfig)(cwd);
+    config = probes.loadConfig
+      ? await probes.loadConfig(cwd)
+      : await loadProjectConfig(
+          cwd,
+          process.env,
+          options.environment ? { environment: options.environment } : {},
+        );
     checks.push(pass("config", "Project configuration is valid."));
   } catch {
     checks.push(
@@ -248,7 +255,7 @@ export async function executeDoctorCommand(
         : fail(
             "api_key",
             "Provider API key is missing.",
-            providerDiagnostic(config.providerName, "configuration").fix,
+            providerDiagnostic(config, "configuration").fix,
           ),
   );
 
@@ -265,7 +272,7 @@ export async function executeDoctorCommand(
       fail(
         "api_auth",
         "API authentication could not be checked without a key.",
-        providerDiagnostic(config.providerName, "configuration").fix,
+        providerDiagnostic(config, "configuration").fix,
       ),
     );
   else if (!network)
@@ -310,8 +317,8 @@ export async function executeDoctorCommand(
         : result === "rejected"
           ? fail(
               "api_auth",
-              providerDiagnostic(config.providerName, "authentication").message,
-              providerDiagnostic(config.providerName, "authentication").fix,
+              providerDiagnostic(config, "authentication").message,
+              providerDiagnostic(config, "authentication").fix,
             )
           : result === "unreachable"
             ? fail(
@@ -331,6 +338,7 @@ export async function executeDoctorCommand(
 
   if (config && (options.vision || config.vision.enabled)) {
     const visionKey = config.visionApiKey?.trim();
+    const visionKeyName = config.visionApiKeyEnv ?? "OPEN_ROUTER_API_KEY";
     checks.push(
       visionKey
         ? pass(
@@ -339,8 +347,8 @@ export async function executeDoctorCommand(
           )
         : fail(
             "vision_key",
-            "Vision fallback is enabled but OPEN_ROUTER_API_KEY is missing.",
-            "Set OPEN_ROUTER_API_KEY in the environment or the project-root .env.",
+            `Vision fallback is enabled but ${visionKeyName} is missing.`,
+            `Set ${visionKeyName} in the environment or the project-root .env.`,
           ),
     );
     if (visionKey) {
@@ -353,8 +361,8 @@ export async function executeDoctorCommand(
           : result === "rejected"
             ? fail(
                 "vision_auth",
-                "OpenRouter rejected OPEN_ROUTER_API_KEY.",
-                "Replace OPEN_ROUTER_API_KEY with a valid OpenRouter key and rerun doctor.",
+                `OpenRouter rejected ${visionKeyName}.`,
+                `Replace ${visionKeyName} with a valid OpenRouter key and rerun doctor.`,
               )
             : fail(
                 "vision_auth",
@@ -367,7 +375,7 @@ export async function executeDoctorCommand(
         fail(
           "vision_auth",
           "The vision key could not be checked without a key.",
-          "Set OPEN_ROUTER_API_KEY, then rerun doctor.",
+          `Set ${visionKeyName}, then rerun doctor.`,
         ),
       );
   }
