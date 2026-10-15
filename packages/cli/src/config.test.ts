@@ -239,6 +239,34 @@ describe("project configuration", () => {
     });
   });
 
+  it("turns screenshots on only for the direct TypeSafe API unless configured", async () => {
+    const root = await temporaryRoot();
+    const load = async (env: Record<string, string> = {}, config?: string) => {
+      if (config !== undefined)
+        await writeFile(path.join(root, "sedum.config.yaml"), config);
+      return (await loadProjectConfig(root, env)).screenshots;
+    };
+    expect(await load()).toBe(true);
+    expect(await load({ TYPESAFE_BASE_URL: "https://example.com" })).toBe(
+      false,
+    );
+    expect(await load({}, "provider:\n  name: clef\n")).toBe(false);
+    expect(await load({}, "screenshots: false\n")).toBe(false);
+    expect(
+      await load(
+        { TYPESAFE_BASE_URL: "https://example.com" },
+        "screenshots: true\n",
+      ),
+    ).toBe(true);
+    await expect(
+      loadProjectConfig(root, {}, { screenshots: false }),
+    ).resolves.toMatchObject({ screenshots: false });
+    await writeFile(path.join(root, "sedum.config.yaml"), "screenshots: yes\n");
+    await expect(loadProjectConfig(root, {})).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ key: "screenshots" })],
+    });
+  });
+
   it("validates vision settings and reads its credential only from the environment", async () => {
     const root = await temporaryRoot();
     await writeFile(

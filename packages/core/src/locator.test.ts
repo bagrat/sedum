@@ -2090,4 +2090,86 @@ describe("vision fallback boundaries", () => {
     expect(captureVisionObservation).not.toHaveBeenCalled();
     expect(vision.choose).not.toHaveBeenCalled();
   });
+
+  describe("screenshot target check", () => {
+    async function checkedPage() {
+      const target = candidate(1, { name: "Add to cart" });
+      const other = candidate(2, { name: "Checkout" });
+      const recorded = recordedPage([target, other]);
+      const { default: sharp } = await import("sharp");
+      const frame = await sharp({
+        create: { width: 200, height: 100, channels: 3, background: "#fff" },
+      })
+        .jpeg()
+        .toBuffer();
+      const page = {
+        evaluate: (expression: string) =>
+          expression.includes("[data-sedum-ref]")
+            ? Promise.resolve({
+                x: 10,
+                y: 10,
+                width: 50,
+                height: 20,
+                viewportWidth: 200,
+                viewportHeight: 100,
+              })
+            : recorded.evaluate(expression),
+        captureFrame: () => Promise.resolve(new Uint8Array(frame)),
+      } as unknown as BrowserPage;
+      const model = resolver((options) => answer(options, target.ref));
+      return { page, model, frame };
+    }
+    const checkCall = { ...call, requestedModel: "jev-1.14.0" };
+
+    it.each([
+      [0.7, "unresolved"],
+      [0.5, "unresolved"],
+      [0.49, "resolved"],
+    ])("with several=%s the pick is %s", async (several, kind) => {
+      const { page, model, frame } = await checkedPage();
+      const checkTarget = vi.fn(async () => ({
+        match: 0.9,
+        several,
+        call: checkCall,
+      }));
+      const result = await resolveTarget(page, model, {
+        operation: "click",
+        sentence: "click Add to cart",
+        targetCheck: { checker: { checkTarget } },
+      });
+
+      expect(result.kind).toBe(kind);
+      if (result.kind === "unresolved") expect(result.reason).toBe("ambiguous");
+      expect(result.calls.at(-1)).toBe(checkCall);
+      const [input] = checkTarget.mock.calls[0] as unknown as [
+        { sentence: string; operation: string; image: Uint8Array },
+      ];
+      expect(input).toMatchObject({
+        sentence: "click Add to cart",
+        operation: "click",
+      });
+      // The target is outlined on the frame, not sent as captured.
+      expect(Buffer.compare(Buffer.from(input.image), frame)).not.toBe(0);
+    });
+
+    it("keeps the pick when the check fails, and keeps its receipt", async () => {
+      const { page, model } = await checkedPage();
+      const failed = new ProviderError(
+        "invalid-input",
+        "rejected",
+        1,
+        checkCall,
+      );
+      const result = await resolveTarget(page, model, {
+        operation: "click",
+        sentence: "click Add to cart",
+        targetCheck: {
+          checker: { checkTarget: vi.fn(async () => Promise.reject(failed)) },
+        },
+      });
+
+      expect(result.kind).toBe("resolved");
+      expect(result.calls.at(-1)).toBe(checkCall);
+    });
+  });
 });

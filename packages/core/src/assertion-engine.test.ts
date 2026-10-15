@@ -235,6 +235,43 @@ describe("assertion engine", () => {
     expect(JSON.stringify(result)).not.toContain("route-secret");
   });
 
+  it("sends a screenshot only when asked, from the judged page version", async () => {
+    const page = fakePage();
+    const moved = { ...firstVersion, revision: firstVersion.revision + 1 };
+    const frames = [new Uint8Array([1]), new Uint8Array([2])];
+    const captureFrame = vi.fn(async () => {
+      // The page changes while the first frame is taken; that frame no
+      // longer matches the digest and must not reach the Judge.
+      if (captureFrame.mock.calls.length === 1) {
+        page.setVersion(moved);
+        page.setQuietVersion(moved);
+        page.setDigest({
+          protocol: 1,
+          version: moved,
+          text: "The products page shows six items.",
+          complete: true,
+        });
+      }
+      return frames[captureFrame.mock.calls.length - 1]!;
+    });
+    const withFrame = { ...page.page, captureFrame } as BrowserPage;
+    const { judge, holds } = fakeJudge();
+
+    await verify(withFrame, judge, "There are six products.");
+    expect(captureFrame).not.toHaveBeenCalled();
+    expect(holds.mock.calls[0]![1]).not.toHaveProperty("screenshot");
+
+    await verify(withFrame, judge, "There are six products.", {
+      screenshot: true,
+    });
+    expect(captureFrame).toHaveBeenCalledTimes(2);
+    expect(holds.mock.calls[1]![1]).toEqual({
+      complete: true,
+      text: "The products page shows six items.",
+      screenshot: frames[1],
+    });
+  });
+
   it("retains bounded exact judged evidence on flags, failures and measures", async () => {
     const text = "🧪".repeat(1_600);
     const page = fakePage(text);

@@ -14,6 +14,7 @@ import {
 } from "./assertion-support.js";
 import { claim, resultCall, withValues } from "./support.js";
 import { redactOpaqueText } from "../flow-values.js";
+import { judgeScreenshot } from "./screenshots.js";
 import { quietPage, visibleText } from "../page-bridge.js";
 import { isRunWideProviderError } from "../provider.js";
 import type { ResultCall } from "../run-result.js";
@@ -33,6 +34,9 @@ function createJudge(context: SentenceAssertionContext): Judge {
         redactOpaqueText(text, context.opaqueEntries),
       ...(signal ? { signal } : {}),
       ...(observationTimeoutMs === undefined ? {} : { observationTimeoutMs }),
+      ...(judgeScreenshot(context.dependencies, context.page)
+        ? { screenshot: true }
+        : {}),
     };
     const assertion = claim(context.step, context.data);
     if (context.step.op === "measure") {

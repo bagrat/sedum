@@ -21,6 +21,9 @@ export async function resolveRunConfig(
     ...(options.outputDir ? { outputDir: options.outputDir } : {}),
     ...(options.reporterDir ? { reporterDir: options.reporterDir } : {}),
     ...visionOverride(options),
+    ...(options.screenshots === undefined
+      ? {}
+      : { screenshots: options.screenshots }),
   });
   validateVisionKey(config);
   return config;

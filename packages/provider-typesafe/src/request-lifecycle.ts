@@ -1,3 +1,4 @@
+import { hasImages, IMAGES_HEADER } from "./images.js";
 import {
   APIConnectionError,
   APIError,
@@ -205,6 +206,7 @@ class RequestLifecycle {
     try {
       const response = await this.dependencies.client.systemOne(this.request, {
         ...(this.options?.signal ? { signal: this.options.signal } : {}),
+        ...(hasImages(this.request) ? { headers: { ...IMAGES_HEADER } } : {}),
         timeout: Math.max(
           1,
           Math.floor(Math.min(this.dependencies.attemptTimeoutMs, remainingMs)),

@@ -25,6 +25,11 @@ export interface JudgePageDigest {
   readonly complete: boolean;
   readonly text: string;
   readonly error?: string;
+  /**
+   * JPEG of the browser viewport at the same page version as `text`.
+   * Providers that cannot read images judge from `text` alone.
+   */
+  readonly screenshot?: Uint8Array;
 }
 
 export interface ProviderCallOptions {
@@ -102,6 +107,30 @@ export interface JudgeDecision {
   readonly holds: number;
   readonly contradicted: number;
   readonly call: ProviderCall;
+}
+
+/** A resolved target, outlined in a viewport screenshot, to check visually. */
+export interface TargetCheckInput {
+  readonly sentence: string;
+  readonly operation: "click" | "fill" | "read";
+  /** JPEG of the viewport with the target outlined in magenta. */
+  readonly image: Uint8Array;
+}
+
+export interface TargetCheckDecision {
+  /** Probability that the outlined element is the one the sentence means. */
+  readonly match: number;
+  /** Probability that several elements fit the sentence equally well. */
+  readonly several: number;
+  readonly call: ProviderCall;
+}
+
+/** Checks a locator pick against what the page looks like. */
+export interface TargetChecker {
+  checkTarget(
+    input: TargetCheckInput,
+    options?: ProviderCallOptions,
+  ): Promise<TargetCheckDecision>;
 }
 
 /** One repeated member's surrounding item text, for per-item verification. */

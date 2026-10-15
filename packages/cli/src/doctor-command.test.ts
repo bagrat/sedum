@@ -55,6 +55,7 @@ async function fixture(): Promise<ResolvedProjectConfig> {
       timeoutMs: 10_000,
     },
     visionApiKey: undefined,
+    screenshots: false,
   };
 }
 

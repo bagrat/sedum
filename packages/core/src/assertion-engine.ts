@@ -67,6 +67,11 @@ export interface AssertionOptions {
   readonly projectText?: (text: string) => string;
   /** Maximum time for the settled page read, before the provider call. */
   readonly observationTimeoutMs?: number;
+  /**
+   * Send the Judge a viewport screenshot taken at the same page version as
+   * the text, so claims about how the page looks can be judged.
+   */
+  readonly screenshot?: boolean;
 }
 
 export interface VerifyOptions extends AssertionOptions {
@@ -249,7 +254,8 @@ async function settledDigest(
   page: BrowserPage,
   timeoutMs: number,
   signal?: AbortSignal,
-): Promise<DigestResult> {
+  screenshot = false,
+): Promise<{ digest: DigestResult; frame?: Uint8Array }> {
   const deadline = performance.now() + timeoutMs;
   try {
     const settled = await withinObservation(
@@ -282,6 +288,10 @@ async function settledDigest(
         );
         validateDigest(digest);
         if (!digest.text.trim()) continue;
+        const frame =
+          screenshot && page.captureFrame
+            ? await withinObservation(page.captureFrame(), deadline, signal)
+            : undefined;
         const current = await withinObservation(
           pageVersion(page),
           deadline,
@@ -291,7 +301,7 @@ async function settledDigest(
           sameVersion(quiet.version, digest.version) &&
           sameVersion(current, digest.version)
         )
-          return digest;
+          return frame ? { digest, frame } : { digest };
       } catch (error) {
         if (navigationRace(error)) continue;
         throw error;
@@ -315,8 +325,11 @@ async function judgePage(
   timeoutMs: number,
   signal?: AbortSignal,
   projectText?: (text: string) => string,
+  screenshot = false,
 ) {
-  let digest = await settledDigest(page, timeoutMs, signal);
+  const settled = await settledDigest(page, timeoutMs, signal, screenshot);
+  const frame = settled.frame;
+  let digest = settled.digest;
   const projectedText = projectText ? projectText(digest.text) : digest.text;
   canceled(signal);
   let decision: Awaited<ReturnType<Judge["holds"]>> | undefined;
@@ -326,6 +339,7 @@ async function judgePage(
       {
         complete: true,
         text: projectedText,
+        ...(frame ? { screenshot: frame } : {}),
       },
       signal ? { signal } : {},
     );
@@ -419,6 +433,7 @@ export async function verify(
     timeoutMs,
     options.signal,
     options.projectText,
+    options.screenshot,
   );
   const policy = evaluateVerifyScores(decision.holds, decision.contradicted, {
     ...(options.minP === undefined ? {} : { minP: options.minP }),
@@ -459,6 +474,8 @@ export async function measure(
     claim,
     timeoutMs,
     options.signal,
+    undefined,
+    options.screenshot,
   );
   return Object.defineProperty(
     {

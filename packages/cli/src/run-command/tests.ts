@@ -11,6 +11,7 @@ import {
   runScriptTest,
   type BugDetector,
   type FlowRunnerDependencies,
+  type TargetChecker,
   type RejectionRouter,
   type RunRecorder,
   type VisionKeyProbe,
@@ -74,6 +75,7 @@ interface ExecutionResources {
   readonly locatorCache: Awaited<ReturnType<typeof openLocatorCache>>;
   readonly visionResolver?: OpenRouterVisionResolver;
   readonly detector?: BugDetector;
+  readonly screenshots?: FlowRunnerDependencies["screenshots"];
 }
 
 export interface TestExecutionOutcome {
@@ -177,6 +179,14 @@ async function createExecutionResources(
       ciOptIn: options.locatorCacheCi ?? false,
       env: process.env,
     }),
+    ...(config.screenshots && "checkTarget" in provider
+      ? {
+          screenshots: {
+            targetChecker: provider as typeof provider & TargetChecker,
+            judge: true,
+          },
+        }
+      : {}),
     ...(config.vision.enabled
       ? {
           visionResolver: new OpenRouterVisionResolver({
@@ -256,6 +266,7 @@ function testDependencies(
       ? { visionResolver: resources.visionResolver }
       : {}),
     ...(resources.detector ? { detector: resources.detector } : {}),
+    ...(resources.screenshots ? { screenshots: resources.screenshots } : {}),
     env: {
       ...config.variables,
       SEDUM_PARALLEL_INDEX: String(lane),

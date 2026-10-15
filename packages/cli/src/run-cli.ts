@@ -251,6 +251,11 @@ export async function runCli(
     .option("--no-vision", "disable vision fallback")
     .option("--vision-model <model>", "override the OpenRouter vision model")
     .option(
+      "--screenshots",
+      "send screenshots to TypeSafe to check targets and judge claims (default for the TypeSafe API)",
+    )
+    .option("--no-screenshots", "send page text only, never screenshots")
+    .option(
       "--url-override <url>",
       "replace entry URL origin for preview deployments",
     )
@@ -348,6 +353,7 @@ export async function runCli(
           browser?: string;
           vision?: boolean;
           visionModel?: string;
+          screenshots?: boolean;
           urlOverride?: string;
           outputDir?: string;
           reporterDir?: string;
@@ -527,6 +533,9 @@ export async function runCli(
           ...(options.env ? { environment: options.env } : {}),
           ...(options.browser ? { browser: options.browser } : {}),
           ...(options.vision !== undefined ? { vision: options.vision } : {}),
+          ...(options.screenshots !== undefined
+            ? { screenshots: options.screenshots }
+            : {}),
           ...(options.visionModel !== undefined
             ? { visionModel: options.visionModel }
             : {}),

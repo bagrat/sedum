@@ -63,6 +63,7 @@ import {
   executeStep,
 } from "../step-executor.js";
 import type { AttemptDependencies, FlowRunResult } from "./contracts.js";
+import { targetCheckOption } from "./screenshots.js";
 
 import {
   firstDiagnostic,
@@ -403,6 +404,7 @@ export async function executeSentence(
           resolveTarget(page, dependencies.provider, {
             operation: "read",
             sentence: match[1]!,
+            ...targetCheckOption(dependencies, page),
             projectText: (text) => redactOpaqueText(text, opaqueEntries),
             ...(dependencies.signal ? { signal: dependencies.signal } : {}),
           });
@@ -668,6 +670,7 @@ export async function executeSentence(
         : {}),
       operation: step.op === "type" ? "fill" : "click",
       sentence: step.text,
+      ...targetCheckOption(dependencies, page),
       cacheSentence,
       runtimeDependent,
       ...(dependencies.locatorCache

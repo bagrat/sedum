@@ -37,6 +37,7 @@ export interface ProjectConfigOverrides {
     readonly enabled?: boolean;
     readonly model?: string;
   };
+  readonly screenshots?: boolean;
 }
 
 export interface ResolvedProjectConfig {
@@ -65,6 +66,12 @@ export interface ResolvedProjectConfig {
     readonly timeoutMs: number;
   };
   readonly visionApiKey: string | undefined;
+  /**
+   * Send viewport screenshots to the provider (TypeSafe images preview): a
+   * visual check of each model-resolved target, and the Judge's evidence.
+   * On by default for the direct TypeSafe endpoint only.
+   */
+  readonly screenshots: boolean;
 }
 
 interface RawEnvironment {
@@ -84,6 +91,7 @@ interface RawConfig extends RawEnvironment {
   readonly environments?: unknown;
   readonly vision?: unknown;
   readonly provider?: unknown;
+  readonly screenshots?: unknown;
 }
 
 const DEFAULTS = {
@@ -124,6 +132,7 @@ const allowed = {
     "environments",
     "vision",
     "provider",
+    "screenshots",
   ]),
   tests: new Set(["directory", "include", "exclude"]),
   affected: new Set(["ignore"]),
@@ -1049,6 +1058,24 @@ export async function loadProjectConfig(
       "Configuration key `vision.enabled` must be a boolean.",
       "Use `vision.enabled: true` or `vision.enabled: false`.",
     );
+  const screenshotsValue = overrides.screenshots ?? raw.screenshots;
+  if (screenshotsValue !== undefined && typeof screenshotsValue !== "boolean")
+    diagnostic(
+      diagnostics,
+      file,
+      counter,
+      node("screenshots"),
+      "screenshots",
+      "invalid_config_type",
+      "Configuration key `screenshots` must be a boolean.",
+      "Use `screenshots: true` or `screenshots: false`.",
+    );
+  // Gateways and compatible services may not accept the images preview.
+  const screenshots =
+    typeof screenshotsValue === "boolean"
+      ? screenshotsValue
+      : providerName === "typesafe" &&
+        providerBaseUrl === DEFAULT_PROVIDER_BASE_URL;
   const visionModelValue = overrides.vision?.model ?? vision.model;
   const visionModel = visionModelValue ?? DEFAULTS.vision.model;
   if (typeof visionModel !== "string" || !visionModel.trim())
@@ -1160,6 +1187,7 @@ export async function loadProjectConfig(
           : DEFAULTS.vision.timeoutMs,
     },
     visionApiKey,
+    screenshots: screenshots && providerName !== "clef",
   });
 }
 

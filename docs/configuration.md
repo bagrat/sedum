@@ -26,6 +26,9 @@ thresholds:
 # Optional. TypeSafe with jev-latest remains the default.
 # provider: { name: clef, model: clef }
 
+# Send screenshots to TypeSafe (default: on for the direct TypeSafe API).
+screenshots: true
+
 vision:
   enabled: false
   model: google/gemini-3.8-flash
@@ -202,6 +205,16 @@ The 16 MiB retained patch and 256 planned request guards fail closed, alongside
 See [Git-diff selection](cli.md#experimental-git-diff-selection) for lossless
 chunking, costs, receipts, and the unverified accuracy caveat. Keep full-suite
 CI; this experimental feature is not a mandatory gate.
+
+## Screenshots
+
+`screenshots` (default `true` for the direct TypeSafe API, `false` for
+gateways, compatible services and Clef) sends viewport screenshots to the
+provider: an outlined screenshot that checks each model-resolved target for
+ambiguity, and a screenshot with each `verify` and `measure` step. `sedum run
+--screenshots` and `--no-screenshots` override it for one run. Screenshots are
+not redacted and are never sent for pages matched by `--sensitive-origin`. See
+[Screenshots](provider-typesafe.md#screenshots) for cost and behavior.
 
 ## Vision fallback (opt-in)
 

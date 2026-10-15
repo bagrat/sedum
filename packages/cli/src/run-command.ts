@@ -23,6 +23,8 @@ export interface RunCommandOptions {
   readonly environment?: string;
   readonly browser?: string;
   readonly vision?: boolean;
+  /** Overrides `screenshots` in sedum.config.yaml. */
+  readonly screenshots?: boolean;
   readonly visionModel?: string;
   readonly urlOverride?: string;
   readonly outputDir?: string;

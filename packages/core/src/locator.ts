@@ -1,5 +1,5 @@
 import type { BrowserPage } from "./browser-driver.js";
-import { PageScriptError } from "./page-bridge.js";
+import { PageScriptError, pageVersion } from "./page-bridge.js";
 import type { Candidate, PageVersion } from "./page-protocol.js";
 import {
   isRunWideProviderError,
@@ -11,6 +11,12 @@ import { ItemVerifier } from "./locator/item-verifier.js";
 import { LiveTargetValidator } from "./locator/live-validator.js";
 import { VisionFallback } from "./locator/vision-fallback.js";
 import { eliminateCandidates } from "./locator/elimination.js";
+import { checkTarget } from "./locator/target-check.js";
+import { sameVersion } from "./locator/candidates.js";
+export {
+  DEFAULT_MAX_SEVERAL,
+  type TargetCheckOptions,
+} from "./locator/target-check.js";
 import {
   LocatorLifecycle,
   prepareLocator,
@@ -174,7 +180,7 @@ export async function resolveTarget(
       roundCompleted: () => rounds++,
     });
     if (eliminated.stale) return unresolved("stale");
-    return await new RuntimeSelection({
+    const result = await new RuntimeSelection({
       page,
       options,
       source,
@@ -188,6 +194,24 @@ export async function resolveTarget(
       unresolved,
       refresh,
     }).resolve();
+    if (result.kind !== "resolved" || !options.targetCheck) return result;
+    const check = await checkTarget({
+      page,
+      ref: result.target.driverTarget().ref,
+      sentence: options.sentence,
+      operation: options.operation,
+      options: options.targetCheck,
+      calls,
+      signal: controller.signal,
+    });
+    ensureActive();
+    if (check.kind !== "ambiguous") return { ...result, calls };
+    // The screenshot may show a newer page than the candidates did; let the
+    // runner observe again rather than refuse on mismatched evidence.
+    if (!sameVersion(await pageVersion(page), source.version))
+      return unresolved("stale");
+    selection.gate = "target_check:ambiguous";
+    return unresolved("ambiguous");
   } catch (error) {
     if (
       options.cache &&

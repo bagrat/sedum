@@ -21,6 +21,9 @@ import type {
   ResolverCandidates,
   ResolverDecision,
   ResolverItem,
+  TargetChecker,
+  TargetCheckDecision,
+  TargetCheckInput,
 } from "@sedum-dev/core";
 import {
   MODEL_CHOICES,
@@ -56,6 +59,12 @@ import { buildRelevanceRequests, type RelevanceTest } from "./relevance.js";
 export type { RelevanceTest } from "./relevance.js";
 import { ProviderGate } from "./gate.js";
 import { askProvider } from "./request-lifecycle.js";
+import {
+  buildTargetCheckRequest,
+  IMAGE_MODEL,
+  withScreenshot,
+} from "./images.js";
+export { IMAGE_MODEL } from "./images.js";
 import { buildGoalRequest, validateGoalDecision } from "./goal-request.js";
 import {
   buildDecisionRequest,
@@ -75,6 +84,11 @@ export interface TypeSafeAdapterOptions {
   readonly baseURL?: string;
   /** Provider model name sent on every System One request. */
   readonly model?: string;
+  /**
+   * Model for requests that carry a screenshot (preview TypeSafe images).
+   * Defaults to IMAGE_MODEL.
+   */
+  readonly imageModel?: string;
   /** Explicit transport injection for recorded-reply tests. Production uses Node fetch pooling. */
   readonly fetch?: Fetch;
   readonly deadlineMs?: number;
@@ -192,10 +206,16 @@ function responseError(
 }
 
 /** One reusable, Node-side adapter supplies both task-specific core interfaces. */
+/** A 4xx other than auth or billing: the service refused the request itself. */
+function imageRejection(error: unknown): boolean {
+  return error instanceof ProviderError && error.code === "invalid-input";
+}
+
 export class TypeSafeAdapter
   implements
     Resolver,
     Judge,
+    TargetChecker,
     ClassificationProvider,
     RelevanceProvider,
     ExplorationAdvisor,
@@ -203,6 +223,9 @@ export class TypeSafeAdapter
 {
   private readonly client: TypeSafeClient;
   private readonly model: string;
+  private readonly imageModel: string;
+  /** Set after the service rejects an image request; later calls send text only. */
+  private imagesRejected = false;
   private readonly estimateJevCost: boolean;
   private readonly provider: string;
   private readonly deadlineMs: number;
@@ -216,6 +239,7 @@ export class TypeSafeAdapter
     const key = providerApiKey(options);
     const parsedBaseURL = providerBaseUrl(options);
     this.model = providerModel(options);
+    this.imageModel = options.imageModel?.trim() || IMAGE_MODEL;
     this.estimateJevCost =
       parsedBaseURL.toString().replace(/\/$/u, "") === BASE_URL;
     this.provider =
@@ -434,9 +458,29 @@ export class TypeSafeAdapter
     pageDigest: JudgePageDigest,
     options?: ProviderCallOptions,
   ): Promise<JudgeDecision> {
-    const request = buildJudgeRequest(claim, pageDigest, this.model);
-    const { response, meta } = await this.ask(request, options);
-    const call = validateCall(response, meta, this.model, this.estimateJevCost);
+    const text = buildJudgeRequest(claim, pageDigest, this.model);
+    const withImage = pageDigest.screenshot && !this.imagesRejected;
+    let request = withImage
+      ? withScreenshot(text, pageDigest, this.imageModel)
+      : text;
+    let asked;
+    try {
+      asked = await this.ask(request, options);
+    } catch (error) {
+      // A screenshot is extra evidence, never a reason to fail the step: on a
+      // rejected image request, judge from the text and stop sending images.
+      if (!withImage || !imageRejection(error)) throw error;
+      this.imagesRejected = true;
+      request = text;
+      asked = await this.ask(request, options);
+    }
+    const { response, meta } = asked;
+    const call = validateCall(
+      response,
+      meta,
+      request.model ?? this.model,
+      this.estimateJevCost,
+    );
     const attempts = call.attempts;
     let holds: number;
     let contradicted: number;
@@ -448,6 +492,44 @@ export class TypeSafeAdapter
       throw responseError(error, attempts, call);
     }
     return { holds, contradicted, call };
+  }
+
+  /** Whether the outlined target is the step's only fit, from a screenshot. */
+  async checkTarget(
+    input: TargetCheckInput,
+    options?: ProviderCallOptions,
+  ): Promise<TargetCheckDecision> {
+    if (this.imagesRejected)
+      throw new ProviderError(
+        "invalid-input",
+        "The provider rejected an earlier image request.",
+      );
+    const request = buildTargetCheckRequest(input, this.imageModel);
+    let asked;
+    try {
+      asked = await this.ask(request, options);
+    } catch (error) {
+      if (imageRejection(error)) this.imagesRejected = true;
+      throw error;
+    }
+    const { response, meta } = asked;
+    const call = validateCall(
+      response,
+      meta,
+      this.imageModel,
+      this.estimateJevCost,
+    );
+    try {
+      const answers = answersOf(response);
+      const count = validateChoice(answers.count, ["none", "one", "several"]);
+      return {
+        match: validateNoul(answers.match),
+        several: count.probabilities.several!,
+        call,
+      };
+    } catch (error) {
+      throw responseError(error, call.attempts, call);
+    }
   }
 
   /** Bug-detector questions about one page state, answered in one call. */
