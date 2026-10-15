@@ -1,8 +1,4 @@
-import type {
-  ExploreFinding,
-  ExploreRunResult,
-  ExploreStepView,
-} from "@sedum-dev/core";
+import type { ExploreFinding, ExploreRunResult } from "@sedum-dev/core";
 import { REPORT_FONTS } from "./html-fonts.js";
 import { esc } from "./report-text.js";
 
@@ -72,15 +68,13 @@ function dataUrl(
 }
 
 function frameFigure(
-  step: ExploreStepView | undefined,
+  finding: ExploreFinding,
   frames: ReadonlyMap<string, Uint8Array> | undefined,
 ): string {
-  const after = dataUrl(frames, step?.frames?.after);
-  const before = dataUrl(frames, step?.frames?.before);
-  const src = after ?? before;
+  const src = dataUrl(frames, finding.frame);
   if (!src)
     return `<p class="soft">No frame: run with <code>--replay</code> to capture them.</p>`;
-  return `<div class="frame"><img alt="The page at step ${step!.step}" src="${src}"></div>`;
+  return `<div class="frame"><img alt="The page at step ${finding.step}" src="${src}"></div>`;
 }
 
 function testBlock(
@@ -102,12 +96,11 @@ function findingCard(
   result: ExploreRunResult,
   options: ExploreHtmlOptions,
 ): string {
-  const step = result.timeline.find((s) => s.step === finding.step);
   return `<section class="finding" id="finding-${esc(finding.id)}">
 <div class="head"><span class="tag">${esc(finding.id)}</span><h3>${esc(finding.signature)}</h3></div>
 <div class="soft"><span class="chip">${esc(finding.kind)}</span> step <a href="#step-${finding.step}" data-step="${finding.step}">${finding.step}</a> on <code>${esc(finding.route)}</code></div>
 <div class="cols"><div><div class="label">What the browser or page said (untrusted)</div><pre>${esc(finding.message)}</pre>
-${testBlock(finding, result.artifacts, options.command ?? "sedum")}</div><div>${frameFigure(step, options.frames)}</div></div></section>`;
+${testBlock(finding, result.artifacts, options.command ?? "sedum")}</div><div>${frameFigure(finding, options.frames)}</div></div></section>`;
 }
 
 function facts(result: ExploreRunResult): string {

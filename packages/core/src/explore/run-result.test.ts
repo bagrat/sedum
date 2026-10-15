@@ -90,6 +90,7 @@ describe("exploration result.json", () => {
         message: "boom",
         step: 2,
         route: "/customers/34",
+        frame: "frames/step-2.jpg",
         test: { notShrunk: "did not reproduce on replay" },
       },
     ]);
@@ -101,6 +102,61 @@ describe("exploration result.json", () => {
       frames: true,
       tests: [],
     });
+  });
+
+  it("shows a page check on the page the step saw before its action", () => {
+    const semantic = (step: number, route: string) => ({
+      signature: `semantic: stuck_loading on ${route}`,
+      kind: "semantic" as const,
+      message: "Page appears stuck in a loading state",
+      step,
+    });
+    const run = buildExploreRunResult(
+      {
+        ...walk,
+        trace: [
+          entry(0, "/", { action: { kind: "scroll", direction: "down" } }),
+          entry(1, "/"),
+          entry(2, "/checkout"),
+          entry(3, "/orders", { action: { kind: "reload" } }),
+          entry(4, "/help"),
+        ],
+        failures: [
+          semantic(0, "/"),
+          semantic(2, "/checkout"),
+          semantic(3, "/orders"),
+        ],
+      },
+      {
+        runId: "r1",
+        startedAt: "",
+        requestedSteps: 5,
+        safety: "off",
+        detect: "semantic",
+        trace: "trace.jsonl",
+        directory: ".",
+        frames: new Map([
+          [0, { after: "frames/step-0.jpg" }],
+          [
+            1,
+            { before: "frames/step-1-before.jpg", after: "frames/step-1.jpg" },
+          ],
+          // Step 2 clicked Orders on /checkout; its settled frame is /orders.
+          [
+            2,
+            { before: "frames/step-2-before.jpg", after: "frames/step-2.jpg" },
+          ],
+          [3, { after: "frames/step-3.jpg" }],
+        ]),
+      },
+    );
+    expect(run.findings.map((f) => [f.route, f.frame])).toEqual([
+      // A scroll that stayed on its route: its settled frame.
+      ["/", "frames/step-0.jpg"],
+      ["/checkout", "frames/step-2-before.jpg"],
+      // No before frame: the page step 2 settled on.
+      ["/orders", "frames/step-2.jpg"],
+    ]);
   });
 
   it("sums writes by request with their first step, and folds record ids", () => {
