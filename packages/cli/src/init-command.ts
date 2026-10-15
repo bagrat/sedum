@@ -71,6 +71,8 @@ const IGNORE = [
   ".env",
   ".sedum/runs/",
   ".sedum/reports/",
+  // `sedum explore` traces, reports and page frames.
+  ".sedum/explore/",
 ] as const;
 
 const WORDMARK = [

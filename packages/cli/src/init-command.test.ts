@@ -75,7 +75,7 @@ describe("sedum init", () => {
     expect(result.stdout).toContain("may incur a charge");
     expect(result.stdout).not.toContain("\u001b[");
     expect(await readFile(path.join(cwd, ".gitignore"), "utf8")).toBe(
-      "node_modules/\n.env\n.sedum/runs/\n.sedum/reports/\n",
+      "node_modules/\n.env\n.sedum/runs/\n.sedum/reports/\n.sedum/explore/\n",
     );
     expect(await readFile(path.join(cwd, ".env.example"), "utf8")).toContain(
       "SAUCE_PASSWORD=secret_sauce",
@@ -144,7 +144,7 @@ describe("sedum init", () => {
     ]);
     expect(artwork[0]?.endsWith("████  █████ █   █")).toBe(true);
     expect(await readFile(path.join(cwd, ".gitignore"), "utf8")).toBe(
-      "node_modules/\n.env\n.sedum/runs/\n.sedum/reports/\n",
+      "node_modules/\n.env\n.sedum/runs/\n.sedum/reports/\n.sedum/explore/\n",
     );
     const again = await executeInitCommand({
       cwd,
