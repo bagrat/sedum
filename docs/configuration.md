@@ -96,6 +96,11 @@ value; blank values are treated as missing. An explicit name disables fallback
 to the default names and aliases. Custom credential variables are not exposed
 to tests and cannot be stored in config `variables`.
 
+Sedum uses Node's native `.env` parser. Parsing edge cases can vary by Node
+version: Node 20, 22, and 24 do not retain `__proto__` from `.env`, though an
+explicit process environment value works. Prefer conventional uppercase names
+such as `TYPESAFE_LOCAL_E2E_API_KEY` for portability.
+
 Without these settings, existing behavior is unchanged: TypeSafe reads
 `TYPESAFE_API_KEY`; OpenRouter (including vision) reads `OPENROUTER_API_KEY`
 or `OPEN_ROUTER_API_KEY`; Clef reads `CLOUDFLARE_AUTH_TOKEN` or

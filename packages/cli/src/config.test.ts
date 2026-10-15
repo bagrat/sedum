@@ -39,14 +39,26 @@ describe("project configuration", () => {
       );
       expect(offline.apiKey).toBeUndefined();
       expect(offline.visionApiKey).toBeUndefined();
-      await writeFile(path.join(root, ".env"), `${name}=file-sentinel\n`);
-      const fromFile = await loadProjectConfig(root, {});
-      expect(fromFile.apiKey).toBe("file-sentinel");
-      expect(fromFile.visionApiKey).toBe("file-sentinel");
       const fromProcess = await loadProjectConfig(root, {
         [name]: "process-sentinel",
       });
       expect(fromProcess.apiKey).toBe("process-sentinel");
+      expect(fromProcess.visionApiKey).toBe("process-sentinel");
+    },
+  );
+
+  it.each(["constructor", "toString"])(
+    "resolves the own credential name %s from .env",
+    async (name) => {
+      const root = await temporaryRoot();
+      await writeFile(
+        path.join(root, "sedum.config.yaml"),
+        `provider: { apiKeyEnv: ${name} }\nvision: { apiKeyEnv: ${name} }\n`,
+      );
+      await writeFile(path.join(root, ".env"), `${name}=file-sentinel\n`);
+      const fromFile = await loadProjectConfig(root, {});
+      expect(fromFile.apiKey).toBe("file-sentinel");
+      expect(fromFile.visionApiKey).toBe("file-sentinel");
     },
   );
 
