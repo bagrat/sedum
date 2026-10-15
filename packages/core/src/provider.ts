@@ -29,7 +29,7 @@ export interface JudgePageDigest {
    * JPEG of the browser viewport at the same page version as `text`.
    * Providers that cannot read images judge from `text` alone.
    */
-  readonly screenshot?: Uint8Array;
+  readonly screenshot?: Uint8Array | undefined;
 }
 
 export interface ProviderCallOptions {

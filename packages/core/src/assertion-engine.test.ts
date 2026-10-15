@@ -259,7 +259,7 @@ describe("assertion engine", () => {
 
     await verify(withFrame, judge, "There are six products.");
     expect(captureFrame).not.toHaveBeenCalled();
-    expect(holds.mock.calls[0]![1]).not.toHaveProperty("screenshot");
+    expect(holds.mock.calls[0]![1].screenshot).toBeUndefined();
 
     await verify(withFrame, judge, "There are six products.", {
       screenshot: true,
