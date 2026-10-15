@@ -458,22 +458,7 @@ export class TypeSafeAdapter
     pageDigest: JudgePageDigest,
     options?: ProviderCallOptions,
   ): Promise<JudgeDecision> {
-    const text = buildJudgeRequest(claim, pageDigest, this.model);
-    const withImage = pageDigest.screenshot && !this.imagesRejected;
-    let request = withImage
-      ? withScreenshot(text, pageDigest, this.imageModel)
-      : text;
-    let asked;
-    try {
-      asked = await this.ask(request, options);
-    } catch (error) {
-      // A screenshot is extra evidence, never a reason to fail the step: on a
-      // rejected image request, judge from the text and stop sending images.
-      if (!withImage || !imageRejection(error)) throw error;
-      this.imagesRejected = true;
-      request = text;
-      asked = await this.ask(request, options);
-    }
+    const { request, asked } = await this.askJudge(claim, pageDigest, options);
     const { response, meta } = asked;
     const call = validateCall(
       response,
@@ -492,6 +477,28 @@ export class TypeSafeAdapter
       throw responseError(error, attempts, call);
     }
     return { holds, contradicted, call };
+  }
+
+  /**
+   * A screenshot is extra evidence, never a reason to fail the step: on a
+   * rejected image request, judge from the text and stop sending images.
+   */
+  private async askJudge(
+    claim: string,
+    pageDigest: JudgePageDigest,
+    options?: ProviderCallOptions,
+  ) {
+    const text = buildJudgeRequest(claim, pageDigest, this.model);
+    if (!pageDigest.screenshot || this.imagesRejected)
+      return { request: text, asked: await this.ask(text, options) };
+    const request = withScreenshot(text, pageDigest, this.imageModel);
+    try {
+      return { request, asked: await this.ask(request, options) };
+    } catch (error) {
+      if (!imageRejection(error)) throw error;
+      this.imagesRejected = true;
+      return { request: text, asked: await this.ask(text, options) };
+    }
   }
 
   /** Whether the outlined target is the step's only fit, from a screenshot. */

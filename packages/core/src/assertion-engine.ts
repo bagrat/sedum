@@ -15,6 +15,7 @@ import {
   isRunWideProviderError,
   unknownCostCall,
   type Judge,
+  type JudgePageDigest,
   type ProviderCall,
 } from "./provider.js";
 
@@ -250,12 +251,32 @@ function validateDigest(result: DigestResult): void {
     throw new AssertionEngineError("incomplete_digest");
 }
 
+/** Taken between the digest and the version check that must cover both. */
+function judgeFrame(
+  page: BrowserPage,
+  screenshot: boolean,
+  deadline: number,
+  signal?: AbortSignal,
+): Promise<Uint8Array | undefined> {
+  if (!screenshot || !page.captureFrame) return Promise.resolve(undefined);
+  return withinObservation(page.captureFrame(), deadline, signal);
+}
+
+function judgedDigest(
+  text: string,
+  screenshot: Uint8Array | undefined,
+): JudgePageDigest {
+  return screenshot
+    ? { complete: true, text, screenshot }
+    : { complete: true, text };
+}
+
 async function settledDigest(
   page: BrowserPage,
   timeoutMs: number,
   signal?: AbortSignal,
   screenshot = false,
-): Promise<{ digest: DigestResult; frame?: Uint8Array }> {
+): Promise<{ digest: DigestResult; frame: Uint8Array | undefined }> {
   const deadline = performance.now() + timeoutMs;
   try {
     const settled = await withinObservation(
@@ -288,10 +309,7 @@ async function settledDigest(
         );
         validateDigest(digest);
         if (!digest.text.trim()) continue;
-        const frame =
-          screenshot && page.captureFrame
-            ? await withinObservation(page.captureFrame(), deadline, signal)
-            : undefined;
+        const frame = await judgeFrame(page, screenshot, deadline, signal);
         const current = await withinObservation(
           pageVersion(page),
           deadline,
@@ -301,7 +319,7 @@ async function settledDigest(
           sameVersion(quiet.version, digest.version) &&
           sameVersion(current, digest.version)
         )
-          return frame ? { digest, frame } : { digest };
+          return { digest, frame };
       } catch (error) {
         if (navigationRace(error)) continue;
         throw error;
@@ -336,11 +354,7 @@ async function judgePage(
   try {
     decision = await judge.holds(
       projectText ? projectText(claim) : claim,
-      {
-        complete: true,
-        text: projectedText,
-        ...(frame ? { screenshot: frame } : {}),
-      },
+      judgedDigest(projectedText, frame),
       signal ? { signal } : {},
     );
     if (signal?.aborted)

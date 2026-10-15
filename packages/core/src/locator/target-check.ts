@@ -89,6 +89,29 @@ async function outlined(
     .toBuffer();
 }
 
+function visible(box: TargetBox | null): box is TargetBox {
+  if (!box) return false;
+  return box.width >= 1 && box.height >= 1;
+}
+
+/** The viewport with the target outlined, or null when it cannot be shown. */
+async function outlinedTarget(
+  page: BrowserPage,
+  ref: string,
+): Promise<Buffer | null> {
+  if (!page.captureFrame) return null;
+  const box = await targetBox(page, ref);
+  if (!visible(box)) return null;
+  return outlined(await page.captureFrame(), box);
+}
+
+function failOpen(error: unknown, calls: ProviderCall[]): TargetCheckOutcome {
+  if (isRunWideProviderError(error)) throw error;
+  if (error instanceof ProviderError && error.failedCall)
+    calls.push(error.failedCall);
+  return { kind: "skipped" };
+}
+
 /**
  * Ask the checker whether the resolved target is the only element the
  * sentence can mean. Fails open: a missing frame or a provider failure keeps
@@ -104,26 +127,19 @@ export async function checkTarget(input: {
   readonly calls: ProviderCall[];
   readonly signal: AbortSignal;
 }): Promise<TargetCheckOutcome> {
-  const { page, options } = input;
-  if (!page.captureFrame) return { kind: "skipped" };
   try {
-    const box = await targetBox(page, input.ref);
-    if (!box || box.width < 1 || box.height < 1) return { kind: "skipped" };
-    const image = await outlined(await page.captureFrame(), box);
+    const image = await outlinedTarget(input.page, input.ref);
     if (!image) return { kind: "skipped" };
-    const decision = await options.checker.checkTarget(
+    const decision = await input.options.checker.checkTarget(
       { sentence: input.sentence, operation: input.operation, image },
       { signal: input.signal },
     );
     input.calls.push(decision.call);
-    const several = decision.several;
-    return several >= (options.maxSeveral ?? DEFAULT_MAX_SEVERAL)
-      ? { kind: "ambiguous", several }
+    const limit = input.options.maxSeveral ?? DEFAULT_MAX_SEVERAL;
+    return decision.several >= limit
+      ? { kind: "ambiguous", several: decision.several }
       : { kind: "accepted" };
   } catch (error) {
-    if (isRunWideProviderError(error)) throw error;
-    if (error instanceof ProviderError && error.failedCall)
-      input.calls.push(error.failedCall);
-    return { kind: "skipped" };
+    return failOpen(error, input.calls);
   }
 }

@@ -75,7 +75,7 @@ interface ExecutionResources {
   readonly locatorCache: Awaited<ReturnType<typeof openLocatorCache>>;
   readonly visionResolver?: OpenRouterVisionResolver;
   readonly detector?: BugDetector;
-  readonly screenshots?: FlowRunnerDependencies["screenshots"];
+  readonly screenshots: NonNullable<FlowRunnerDependencies["screenshots"]>;
 }
 
 export interface TestExecutionOutcome {
@@ -179,14 +179,7 @@ async function createExecutionResources(
       ciOptIn: options.locatorCacheCi ?? false,
       env: process.env,
     }),
-    ...(config.screenshots && "checkTarget" in provider
-      ? {
-          screenshots: {
-            targetChecker: provider as typeof provider & TargetChecker,
-            judge: true,
-          },
-        }
-      : {}),
+    screenshots: screenshotOptions(config, provider),
     ...(config.vision.enabled
       ? {
           visionResolver: new OpenRouterVisionResolver({
@@ -196,6 +189,19 @@ async function createExecutionResources(
           }),
         }
       : {}),
+  };
+}
+
+/** Screenshots go only to a provider that can check targets from them. */
+function screenshotOptions(
+  config: ResolvedProjectConfig,
+  provider: ExecutionResources["provider"],
+): ExecutionResources["screenshots"] {
+  if (!config.screenshots || !("checkTarget" in provider))
+    return { judge: false };
+  return {
+    targetChecker: provider as typeof provider & TargetChecker,
+    judge: true,
   };
 }
 
@@ -266,7 +272,7 @@ function testDependencies(
       ? { visionResolver: resources.visionResolver }
       : {}),
     ...(resources.detector ? { detector: resources.detector } : {}),
-    ...(resources.screenshots ? { screenshots: resources.screenshots } : {}),
+    screenshots: resources.screenshots,
     env: {
       ...config.variables,
       SEDUM_PARALLEL_INDEX: String(lane),
