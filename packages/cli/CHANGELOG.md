@@ -1,5 +1,19 @@
 # sedum-cli
 
+## 0.1.0-alpha.16
+
+### Patch Changes
+
+- 34ed07b: Support `provider.apiKeyEnv` and `vision.apiKeyEnv` to read provider credentials
+  from custom environment variable names, with named environment overrides.
+  Use configured names in diagnostics, doctor checks, and init templates while
+  preserving existing defaults and aliases when no setting is supplied.
+- b9be340: Add `.sedum/explore/` to the `.gitignore` rules `sedum init` writes. `sedum explore` stores traces, reports, and page frames there, which can show private page pixels; before, `git add .` after one exploration committed them. Run `sedum init` again in an existing project to add the rule.
+  - @sedum-dev/core@0.1.0-alpha.16
+  - @sedum-dev/reporters@0.1.0-alpha.16
+  - @sedum-dev/provider-typesafe@0.1.0-alpha.16
+  - @sedum-dev/provider-clef@0.1.0-alpha.16
+
 ## 0.1.0-alpha.15
 
 ### Patch Changes

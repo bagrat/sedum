@@ -1,5 +1,11 @@
 # @sedum-dev/reporters
 
+## 0.1.0-alpha.16
+
+### Patch Changes
+
+- @sedum-dev/core@0.1.0-alpha.16
+
 ## 0.1.0-alpha.15
 
 ### Patch Changes
