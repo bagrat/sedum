@@ -976,17 +976,38 @@ class PlaywrightSession implements BrowserSession {
   }
 }
 
+export interface PlaywrightBrowserDriverOptions {
+  /**
+   * The caller handles SIGINT and SIGTERM and closes its browsers. Playwright
+   * then installs no handler of its own; its handler exits the process with
+   * 130 as soon as the browsers close, before the caller finishes its work.
+   */
+  readonly callerHandlesSignals?: boolean;
+}
+
 export class PlaywrightBrowserDriver implements BrowserDriver {
+  constructor(
+    private readonly driverOptions: PlaywrightBrowserDriverOptions = {},
+  ) {}
+
   async launch(options: BrowserLaunchOptions = {}): Promise<BrowserSession> {
     const headless = options.headless ?? true;
     const slowMo = options.slowMoMs ?? 0;
+    const signals = this.driverOptions.callerHandlesSignals
+      ? { handleSIGINT: false, handleSIGTERM: false }
+      : {};
     const overlay = options.overlay ?? false;
     const browserKind = options.browser ?? "chrome";
 
     if (browserKind === "chrome") {
       try {
         return new PlaywrightSession(
-          await chromium.launch({ channel: "chrome", headless, slowMo }),
+          await chromium.launch({
+            channel: "chrome",
+            headless,
+            slowMo,
+            ...signals,
+          }),
           overlay,
         );
       } catch (error) {
@@ -1006,7 +1027,7 @@ export class PlaywrightBrowserDriver implements BrowserDriver {
 
     try {
       return new PlaywrightSession(
-        await chromium.launch({ headless, slowMo }),
+        await chromium.launch({ headless, slowMo, ...signals }),
         overlay,
       );
     } catch (error) {
