@@ -85,6 +85,11 @@ the normal input price, so a step with one costs about $0.0001 more.
   of the browser window, so claims about how the page looks (colors, icons,
   disabled controls, images, overlap) can be judged. The text still covers
   content scrolled out of view.
+- **Vision fallback (opt-in, `vision.enabled` or `--vision`).** When the text
+  model cannot single out a click target, Sedum boxes and labels every
+  visible candidate in a screenshot and asks Jev which label the step means,
+  or to abstain. One request per step, about 3,400 input tokens (about
+  $0.00015). See [Vision fallback](configuration.md#vision-fallback-opt-in).
 
 Screenshots fail open: if the service rejects an image request, Sedum judges
 from text and stops sending images for the rest of the run, and a failed

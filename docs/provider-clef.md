@@ -106,10 +106,9 @@ for clean-checkout commands and ignore semantics. Live accuracy is unverified;
 spending on an accuracy experiment requires separate approval. Keep full-suite
 CI rather than making this experimental selector a mandatory gate.
 
-Clef is text-only in this release. Selecting it does not enable image upload.
-Existing vision fallback remains an independent, explicit OpenRouter opt-in
-using `vision.enabled` or `--vision`. Clef screenshot fallback and image-first
-decisions are deferred to later phases.
+Clef is text-only in this release. Selecting it does not enable image upload,
+so screenshots and the vision fallback are unavailable with Clef. Clef
+screenshot fallback and image-first decisions are deferred to later phases.
 
 ## Caches, receipts, and cost
 

@@ -62,11 +62,7 @@ describe("project configuration", () => {
       providerName: "typesafe",
       providerBaseUrl: "https://api.typesafe.ai",
       providerModel: "jev-latest",
-      vision: {
-        enabled: false,
-        model: "google/gemini-3.8-flash",
-        timeoutMs: 10000,
-      },
+      vision: { enabled: false },
     });
     expect(config.testDirectory).toBe(path.join(root, "tests"));
     expect(config.outputDir).toBe(path.join(root, ".sedum", "runs"));
@@ -116,7 +112,6 @@ describe("project configuration", () => {
         providerBaseUrl: "https://openrouter.ai/api",
         providerModel: "typesafe/jev-1.13",
         apiKey: "host-key",
-        visionApiKey: "host-key",
         vision: { enabled: false },
       });
       expect(config.variables[name]).toBeUndefined();
@@ -267,29 +262,22 @@ describe("project configuration", () => {
     });
   });
 
-  it("validates vision settings and reads its credential only from the environment", async () => {
+  it("validates vision settings and names the removed OpenRouter keys", async () => {
     const root = await temporaryRoot();
     await writeFile(
       path.join(root, "sedum.config.yaml"),
-      `vision:
-  enabled: true
-  model: openrouter/example
-  timeoutMs: 2500
-`,
+      "vision:\n  enabled: true\n",
     );
-    await writeFile(path.join(root, ".env"), "OPEN_ROUTER_API_KEY=file-key\n");
     await expect(loadProjectConfig(root, {})).resolves.toMatchObject({
-      vision: { enabled: true, model: "openrouter/example", timeoutMs: 2500 },
-      visionApiKey: "file-key",
-      variables: { OPEN_ROUTER_API_KEY: undefined },
+      vision: { enabled: true },
     });
 
     await writeFile(
       path.join(root, "sedum.config.yaml"),
       `vision:
   enabled: yes
-  model: ""
-  timeoutMs: 0
+  model: google/gemini-3.8-flash
+  timeoutMs: 2500
   retry: true
 variables:
   OPEN_ROUTER_API_KEY: forbidden
@@ -302,8 +290,15 @@ variables:
           code: "unknown_config_key",
         }),
         expect.objectContaining({ key: "vision.enabled" }),
-        expect.objectContaining({ key: "vision.model" }),
-        expect.objectContaining({ key: "vision.timeoutMs" }),
+        expect.objectContaining({
+          key: "vision.model",
+          code: "removed_config_key",
+          fix: "Delete `vision.model` from sedum.config.yaml.",
+        }),
+        expect.objectContaining({
+          key: "vision.timeoutMs",
+          code: "removed_config_key",
+        }),
         expect.objectContaining({
           key: "variables.OPEN_ROUTER_API_KEY",
           code: "api_key_in_config",

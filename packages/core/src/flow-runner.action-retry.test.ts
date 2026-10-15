@@ -4,7 +4,8 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { NoopClassificationCache } from "./classification-cache.js";
 import { runFlow } from "./flow-runner.js";
-import { captureVisionObservation, VisionRequestError } from "./vision.js";
+import { captureVisionObservation } from "./vision.js";
+import { ProviderError } from "./provider.js";
 import { RunRecorder } from "./run-recorder.js";
 import { validateRunResult } from "./run-result.js";
 
@@ -129,12 +130,11 @@ describe("action retry boundary", () => {
       const visionChoose = vi.fn(async () => {
         const { call } = await choose.mock.results[0]!.value;
         if (options.failure)
-          throw new VisionRequestError(
-            "rate-limited",
-            "http_error",
-            123,
+          throw new ProviderError(
+            "timeout",
+            "The provider request timed out.",
+            1,
             call,
-            429,
           );
         return { decision: { kind: "candidate" as const, id: "C2" }, call };
       });
@@ -236,9 +236,8 @@ describe("action retry boundary", () => {
     expect(run.result.status).toBe("failed");
     expect(run.report.tests[0]?.attempts[0]?.steps[0]?.locator?.vision).toEqual(
       {
-        failure: "http_error",
-        httpStatus: 429,
-        elapsedMs: 123,
+        failure: "timeout",
+        elapsedMs: expect.any(Number),
         outcome: "failed",
         reason: "repeated_member_no_evidence",
       },
@@ -248,7 +247,7 @@ describe("action retry boundary", () => {
     ).toEqual([undefined, "vision"]);
     expect(
       run.report.tests[0]?.attempts[0]?.steps[0]?.error?.message,
-    ).toContain("(vision http_error, HTTP 429)");
+    ).toContain("(vision timeout)");
     expect(run.clickRef).not.toHaveBeenCalled();
     expect(run.visionChoose).toHaveBeenCalledTimes(1);
   });

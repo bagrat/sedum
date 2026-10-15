@@ -143,9 +143,7 @@ function visionFailure(
     { kind: "unresolved" }
   >["diagnostic"]["vision"],
 ): string | undefined {
-  if (!vision?.failure) return undefined;
-  const status = vision.httpStatus ? `, HTTP ${vision.httpStatus}` : "";
-  return `vision ${vision.failure}${status}`;
+  return vision?.failure ? `vision ${vision.failure}` : undefined;
 }
 
 function visionFallbackNote(

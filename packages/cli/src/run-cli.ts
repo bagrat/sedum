@@ -249,7 +249,6 @@ export async function runCli(
     .option("--browser <kind>", "chrome or chromium")
     .option("--vision", "enable vision fallback for ambiguous clicks")
     .option("--no-vision", "disable vision fallback")
-    .option("--vision-model <model>", "override the OpenRouter vision model")
     .option(
       "--screenshots",
       "send screenshots to TypeSafe to check targets and judge claims (default for the TypeSafe API)",
@@ -352,7 +351,6 @@ export async function runCli(
           env?: string;
           browser?: string;
           vision?: boolean;
-          visionModel?: string;
           screenshots?: boolean;
           urlOverride?: string;
           outputDir?: string;
@@ -535,9 +533,6 @@ export async function runCli(
           ...(options.vision !== undefined ? { vision: options.vision } : {}),
           ...(options.screenshots !== undefined
             ? { screenshots: options.screenshots }
-            : {}),
-          ...(options.visionModel !== undefined
-            ? { visionModel: options.visionModel }
             : {}),
           ...(options.urlOverride ? { urlOverride: options.urlOverride } : {}),
           ...(options.outputDir ? { outputDir: options.outputDir } : {}),
@@ -752,21 +747,14 @@ export async function runCli(
     .command("doctor")
     .description("check whether this environment can run Sedum")
     .option("--json", "print versioned JSON checks on stdout", false)
-    .option(
-      "--vision",
-      "also check the vision fallback's OPEN_ROUTER_API_KEY (automatic when vision.enabled is true)",
-      false,
-    )
     .addHelpText(
       "after",
       "\nThe authenticated API check makes one small, potentially billable request.\n\nExit codes:\n  0 all checks passed\n  3 one or more prerequisites failed\n",
     )
-    .action(async (options: { json: boolean; vision: boolean }) => {
+    .action(async (options: { json: boolean }) => {
       const { executeDoctorCommand, renderDoctorText } =
         await import("./doctor-command.js");
-      const result = await executeDoctorCommand(cwd, runtime.doctorProbes, {
-        vision: options.vision,
-      });
+      const result = await executeDoctorCommand(cwd, runtime.doctorProbes);
       writeOut(
         options.json ? `${JSON.stringify(result)}\n` : renderDoctorText(result),
       );

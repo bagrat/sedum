@@ -749,4 +749,88 @@ describe("TypeSafeAdapter screenshots", () => {
       "several",
     ]);
   });
+
+  describe("vision fallback", () => {
+    const observation = {
+      instruction: "click Edit for Alan",
+      image: jpeg,
+      candidates: [
+        { id: "C1", name: "Edit", role: "button" },
+        { id: "C2", name: "Edit", role: "button" },
+      ],
+    };
+    const reply = (
+      target: Record<string, number>,
+      count: Record<string, number>,
+    ) =>
+      json({
+        answers: {
+          target: {
+            type: "choice",
+            choice: Object.entries(target).sort((a, b) => b[1] - a[1])[0]![0],
+            probabilities: target,
+          },
+          count: {
+            type: "choice",
+            choice: Object.entries(count).sort((a, b) => b[1] - a[1])[0]![0],
+            probabilities: count,
+          },
+        },
+        model: "jev-1.14.0",
+        usage: { input_tokens: 3400, output_tokens: 0 },
+      });
+    const target = (c2: number) => ({
+      C1: 0.98 - c2,
+      C2: c2,
+      ambiguous: 0.01,
+      no_match: 0.01,
+    });
+    const one = { none: 0.05, one: 0.9, several: 0.05 };
+
+    it("asks Jev to choose among the labelled boxes from the screenshot", async () => {
+      const { adapter, requests } = recorder([reply(target(0.95), one)]);
+      const answer = await adapter.chooseFromScreenshot(observation);
+
+      expect(answer.decision).toEqual({ kind: "candidate", id: "C2" });
+      expect(answer.call).toMatchObject({ requestedModel: "jev-1.14.0" });
+      const [request] = requests;
+      const ref = request!.body.state.screen!;
+      expect(request!.headers.get("typesafe-danger-zone-images")).toBe("true");
+      expect(request!.body).toMatchObject({
+        model: "jev-1.14.0",
+        assets: {
+          [ref]: { type: "image", format: "png", data_base64: "/9j/4AAQ+g==" },
+        },
+      });
+      expect(Object.keys(request!.body.questions.target!.criteria)).toEqual([
+        "C1",
+        "C2",
+        "ambiguous",
+        "no_match",
+      ]);
+      expect(request!.body.questions.target!.instructions).toContain(
+        '"click Edit for Alan"',
+      );
+    });
+
+    it("abstains unless Jev is sure of the box and that something fits", async () => {
+      const { adapter } = recorder([
+        reply(target(0.85), one),
+        reply(target(0.95), { none: 0.35, one: 0.6, several: 0.05 }),
+        reply(target(0.95), { none: 0.05, one: 0.4, several: 0.55 }),
+        reply({ C1: 0.1, C2: 0.1, ambiguous: 0.7, no_match: 0.1 }, one),
+      ]);
+      const reasons = [];
+      for (let index = 0; index < 4; index++)
+        reasons.push(
+          (await adapter.chooseFromScreenshot(observation)).decision,
+        );
+      expect(reasons).toEqual([
+        { kind: "abstain", reason: "uncertain" },
+        { kind: "abstain", reason: "no_match" },
+        { kind: "abstain", reason: "ambiguous" },
+        { kind: "abstain", reason: "ambiguous" },
+      ]);
+    });
+  });
 });

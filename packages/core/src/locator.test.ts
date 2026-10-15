@@ -11,11 +11,7 @@ import type {
   ResolverDecision,
 } from "./provider.js";
 import { ProviderError } from "./provider.js";
-import {
-  captureVisionObservation,
-  VisionRequestError,
-  type VisionResolver,
-} from "./vision.js";
+import { captureVisionObservation, type VisionResolver } from "./vision.js";
 
 vi.mock("./vision.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./vision.js")>()),
@@ -2050,12 +2046,11 @@ describe("vision fallback boundaries", () => {
   it("preserves safe vision failure details and billed usage", async () => {
     const { page, vision, jev } = setup();
     vi.mocked(vision.chooseFromScreenshot).mockRejectedValue(
-      new VisionRequestError(
+      new ProviderError(
         "invalid-response",
-        "truncated_response",
-        1234,
+        "The provider returned an invalid response.",
+        1,
         call,
-        200,
       ),
     );
     const result = await resolveTarget(page, jev, {
@@ -2068,15 +2063,26 @@ describe("vision fallback boundaries", () => {
       reason: "ambiguous",
       diagnostic: {
         gate: "repeated_member_no_evidence:vision_error",
-        vision: {
-          failure: "truncated_response",
-          elapsedMs: 1234,
-          httpStatus: 200,
-        },
+        vision: { failure: "invalid_response", outcome: "failed" },
       },
       calls: [call, call],
     });
     expect(vision.chooseFromScreenshot).toHaveBeenCalledTimes(1);
+  });
+  it("stops the run when vision hits a provider error every request would", async () => {
+    const { page, vision, jev } = setup();
+    const rejected = new ProviderError(
+      "authentication",
+      "The provider rejected the API key.",
+    );
+    vi.mocked(vision.chooseFromScreenshot).mockRejectedValue(rejected);
+    await expect(
+      resolveTarget(page, jev, {
+        operation: "click",
+        sentence: "click the right Edit",
+        visionResolver: vision,
+      }),
+    ).rejects.toBe(rejected);
   });
   it("does not capture or call vision for confident unique targets", async () => {
     const { vision } = setup();

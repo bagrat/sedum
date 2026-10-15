@@ -146,17 +146,9 @@ function visionExecutionLines(
   const attempts = steps.flatMap((step) =>
     step.locator?.vision ? [step.locator.vision] : [],
   );
-  const warnings = {
-    accepted: null,
-    rejected:
-      "vision warning: OpenRouter rejected OPEN_ROUTER_API_KEY, so vision fallback cannot work. Check it with `sedum doctor --vision`.",
-    unreachable:
-      "vision warning: OpenRouter could not be reached to check OPEN_ROUTER_API_KEY.",
-  } as const;
   return compact([
     visionOutcomeLine(vision.model, attempts),
     failedClickVisionLine(steps),
-    warnings[vision.key],
   ]);
 }
 

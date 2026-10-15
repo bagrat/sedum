@@ -49,12 +49,7 @@ async function fixture(): Promise<ResolvedProjectConfig> {
     cloudflareAccountId: undefined,
     providerBaseUrl: "https://api.typesafe.ai",
     providerModel: "jev-latest",
-    vision: {
-      enabled: false,
-      model: "google/gemini-3.8-flash",
-      timeoutMs: 10_000,
-    },
-    visionApiKey: undefined,
+    vision: { enabled: false },
     screenshots: false,
   };
 }
@@ -133,58 +128,25 @@ describe("sedum doctor", () => {
     expect(check?.fix).toBeTruthy();
   });
 
-  it("checks the vision key only when vision is enabled or requested", async () => {
+  it("checks that vision can send screenshots only when vision is enabled", async () => {
     const config = await fixture();
-    const visionAuth = vi.fn(async (key: string) =>
-      key === "sk-or-good" ? ("accepted" as const) : ("rejected" as const),
-    );
-    const ids = (result: Awaited<ReturnType<typeof executeDoctorCommand>>) =>
-      result.checks.map((check) => check.id);
-    const off = await executeDoctorCommand(config.projectRoot, {
-      ...probes(config),
-      visionAuth,
-    });
-    expect(ids(off)).not.toContain("vision_auth");
-    expect(visionAuth).not.toHaveBeenCalled();
+    const vision = async (overrides: Partial<ResolvedProjectConfig>) =>
+      (
+        await executeDoctorCommand(
+          config.projectRoot,
+          probes({ ...config, ...overrides }),
+        )
+      ).checks.filter((check) => check.id === "vision");
 
-    const enabled = {
-      ...config,
-      vision: { ...config.vision, enabled: true },
-      visionApiKey: "sk-or-bogus",
-    };
-    const rejected = await executeDoctorCommand(config.projectRoot, {
-      ...probes(enabled),
-      visionAuth,
-    });
+    expect(await vision({})).toEqual([]);
     expect(
-      rejected.checks.filter((check) => check.id.startsWith("vision")),
+      await vision({ vision: { enabled: true }, screenshots: true }),
+    ).toEqual([expect.objectContaining({ status: "pass" })]);
+    expect(
+      await vision({ vision: { enabled: true }, screenshots: false }),
     ).toEqual([
-      expect.objectContaining({ id: "vision_key", status: "pass" }),
-      expect.objectContaining({
-        id: "vision_auth",
-        status: "fail",
-        message: "OpenRouter rejected OPEN_ROUTER_API_KEY.",
-      }),
+      expect.objectContaining({ status: "fail", fix: expect.any(String) }),
     ]);
-    expect(JSON.stringify(rejected)).not.toContain("sk-or-bogus");
-
-    const requested = await executeDoctorCommand(
-      config.projectRoot,
-      { ...probes({ ...config, visionApiKey: "sk-or-good" }), visionAuth },
-      { vision: true },
-    );
-    expect(
-      requested.checks.find((check) => check.id === "vision_auth")?.status,
-    ).toBe("pass");
-
-    const missing = await executeDoctorCommand(
-      config.projectRoot,
-      { ...probes(config), visionAuth },
-      { vision: true },
-    );
-    expect(
-      missing.checks.find((check) => check.id === "vision_key"),
-    ).toMatchObject({ status: "fail" });
   });
 
   it("does not claim dependent checks pass when config fails", async () => {

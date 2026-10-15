@@ -37,7 +37,6 @@ export interface LocatorDiagnostic {
     readonly abstentionReason?: string;
     readonly elapsedMs: number;
     readonly failure?: VisionFailure | "unknown" | "stale_page";
-    readonly httpStatus?: number;
   };
   readonly candidateCount: number;
   readonly rounds: number;
