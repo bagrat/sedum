@@ -261,14 +261,29 @@ function frameCapture(
   return () => page.captureFrame!();
 }
 
-/** Taken between the digest and the version check that must cover both. */
-function judgeFrame(
+/** Ample for one viewport JPEG; a slower capture is skipped, not waited on. */
+const FRAME_TIMEOUT_MS = 2_000;
+
+/**
+ * Taken between the digest and the version check that must cover both. The
+ * screenshot is extra evidence: when it fails or is slow, judge from text.
+ */
+async function judgeFrame(
   capture: FrameCapture | undefined,
   deadline: number,
   signal?: AbortSignal,
 ): Promise<Uint8Array | undefined> {
-  if (!capture) return Promise.resolve(undefined);
-  return withinObservation(capture(), deadline, signal);
+  if (!capture) return undefined;
+  const frameDeadline = Math.min(
+    deadline,
+    performance.now() + FRAME_TIMEOUT_MS,
+  );
+  try {
+    return await withinObservation(capture(), frameDeadline, signal);
+  } catch {
+    canceled(signal);
+    return undefined;
+  }
 }
 
 async function settledDigest(

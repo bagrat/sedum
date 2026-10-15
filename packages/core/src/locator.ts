@@ -1,5 +1,5 @@
 import type { BrowserPage } from "./browser-driver.js";
-import { PageScriptError, pageVersion } from "./page-bridge.js";
+import { PageScriptError } from "./page-bridge.js";
 import type { Candidate, PageVersion } from "./page-protocol.js";
 import {
   isRunWideProviderError,
@@ -11,8 +11,7 @@ import { ItemVerifier } from "./locator/item-verifier.js";
 import { LiveTargetValidator } from "./locator/live-validator.js";
 import { VisionFallback } from "./locator/vision-fallback.js";
 import { eliminateCandidates } from "./locator/elimination.js";
-import { checkTarget } from "./locator/target-check.js";
-import { sameVersion } from "./locator/candidates.js";
+import { checkResolvedTarget } from "./locator/target-check.js";
 export {
   DEFAULT_MAX_SEVERAL,
   type TargetCheckOptions,
@@ -195,9 +194,9 @@ export async function resolveTarget(
       refresh,
     }).resolve();
     if (result.kind !== "resolved" || !options.targetCheck) return result;
-    const check = await checkTarget({
+    const verdict = await checkResolvedTarget({
       page,
-      ref: result.target.driverTarget().ref,
+      target: result.target,
       sentence: options.sentence,
       operation: options.operation,
       options: options.targetCheck,
@@ -205,13 +204,9 @@ export async function resolveTarget(
       signal: controller.signal,
     });
     ensureActive();
-    if (check.kind !== "ambiguous") return { ...result, calls };
-    // The screenshot may show a newer page than the candidates did; let the
-    // runner observe again rather than refuse on mismatched evidence.
-    if (!sameVersion(await pageVersion(page), source.version))
-      return unresolved("stale");
-    selection.gate = "target_check:ambiguous";
-    return unresolved("ambiguous");
+    if (verdict === "accepted") return { ...result, calls };
+    if (verdict === "ambiguous") selection.gate = "target_check:ambiguous";
+    return unresolved(verdict);
   } catch (error) {
     if (
       options.cache &&

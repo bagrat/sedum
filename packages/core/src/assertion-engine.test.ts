@@ -272,6 +272,27 @@ describe("assertion engine", () => {
     });
   });
 
+  it("judges from text when the screenshot cannot be taken", async () => {
+    const page = fakePage();
+    const captureFrame = vi.fn(async () => {
+      throw new Error("Protocol error: Unable to capture screenshot");
+    });
+    const { judge, holds } = fakeJudge();
+    const result = await verify(
+      { ...page.page, captureFrame } as BrowserPage,
+      judge,
+      "There are six products.",
+      { screenshot: true },
+    );
+
+    expect(captureFrame).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ verdict: "passed", holds: 0.9 });
+    expect(holds.mock.calls[0]![1]).toMatchObject({
+      text: "The products page shows six items.",
+      screenshot: undefined,
+    });
+  });
+
   it("retains bounded exact judged evidence on flags, failures and measures", async () => {
     const text = "🧪".repeat(1_600);
     const page = fakePage(text);

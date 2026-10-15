@@ -1,5 +1,8 @@
 import type { BrowserPage } from "../browser-driver.js";
+import { pageVersion } from "../page-bridge.js";
 import type { Operation } from "../page-protocol.js";
+import type { ResolvedStepTarget } from "../step-executor.js";
+import { sameVersion } from "./candidates.js";
 import {
   isRunWideProviderError,
   ProviderError,
@@ -142,4 +145,29 @@ export async function checkTarget(input: {
   } catch (error) {
     return failOpen(error, input.calls);
   }
+}
+
+/**
+ * Check a resolved target and say what the locator should do with it. An
+ * ambiguous verdict on a page that has moved on since the target was
+ * validated is stale evidence: the runner observes again instead. The
+ * validator can accept a target at a later revision than the candidate
+ * scan, so the comparison is against the target's own version.
+ */
+export async function checkResolvedTarget(input: {
+  readonly page: BrowserPage;
+  readonly target: ResolvedStepTarget;
+  readonly sentence: string;
+  readonly operation: Operation;
+  readonly options: TargetCheckOptions;
+  readonly calls: ProviderCall[];
+  readonly signal: AbortSignal;
+}): Promise<"accepted" | "ambiguous" | "stale"> {
+  const { target, ...rest } = input;
+  const { ref, version } = target.driverTarget();
+  const check = await checkTarget({ ...rest, ref });
+  if (check.kind !== "ambiguous") return "accepted";
+  return sameVersion(await pageVersion(input.page), version)
+    ? "ambiguous"
+    : "stale";
 }

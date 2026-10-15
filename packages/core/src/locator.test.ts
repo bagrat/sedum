@@ -2152,6 +2152,59 @@ describe("vision fallback boundaries", () => {
       expect(Buffer.compare(Buffer.from(input.image), frame)).not.toBe(0);
     });
 
+    it("refuses as ambiguous when the target was validated after page churn", async () => {
+      const target = candidate(1, {
+        name: "Add to cart",
+        signals: { path: "main/button:0", nodeId: "node-1" },
+      });
+      const other = candidate(2, {
+        name: "Checkout",
+        signals: { path: "main/button:1", nodeId: "node-2" },
+      });
+      const recorded = recordedPage([target, other]);
+      const { default: sharp } = await import("sharp");
+      const frame = await sharp({
+        create: { width: 200, height: 100, channels: 3, background: "#fff" },
+      })
+        .jpeg()
+        .toBuffer();
+      const page = {
+        evaluate: (expression: string) =>
+          expression.includes("[data-sedum-ref]")
+            ? Promise.resolve({
+                x: 10,
+                y: 10,
+                width: 50,
+                height: 20,
+                viewportWidth: 200,
+                viewportHeight: 100,
+              })
+            : recorded.evaluate(expression),
+        captureFrame: () => Promise.resolve(new Uint8Array(frame)),
+      } as unknown as BrowserPage;
+      // An unrelated revision lands between the scan and the validation; the
+      // target is accepted at the newer revision, which then holds.
+      const model = resolver((options) => {
+        recorded.setVersion({ ...initial, revision: 2 });
+        return answer(options, target.ref);
+      });
+      const result = await resolveTarget(page, model, {
+        operation: "click",
+        sentence: "click Add to cart",
+        targetCheck: {
+          checker: {
+            checkTarget: vi.fn(async () => ({
+              match: 0.9,
+              several: 0.8,
+              call: checkCall,
+            })),
+          },
+        },
+      });
+
+      expect(result).toMatchObject({ kind: "unresolved", reason: "ambiguous" });
+    });
+
     it("keeps the pick when the check fails, and keeps its receipt", async () => {
       const { page, model } = await checkedPage();
       const failed = new ProviderError(
