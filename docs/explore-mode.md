@@ -290,8 +290,10 @@ after its start time and seed:
   example, every settings page is "account") make coverage guidance weaker.
 - Jev reads text only, and page text is cut to 3,000 characters per request,
   with at most 60 click targets.
-- The provider is TypeSafe only, configured from `TYPESAFE_API_KEY`. The
-  command does not read `sedum.config.yaml`.
+- The provider is TypeSafe only, configured from `TYPESAFE_API_KEY` (and
+  `TYPESAFE_BASE_URL`, `TYPESAFE_DEFAULT_MODEL`) in your shell or the
+  project-root `.env`, as `sedum run` reads them. The command does not read
+  `sedum.config.yaml`.
 
 ## Evaluation on the fixture shop
 
