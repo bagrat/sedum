@@ -98,7 +98,7 @@ export async function executeSelectedTests(
 
   const gate = new ProviderGate({ concurrency: providerConcurrency });
   const resources = await createExecutionResources(request, gate);
-  const driver = new PlaywrightBrowserDriver();
+  const driver = new PlaywrightBrowserDriver({ callerHandlesSignals: true });
   const browsers = Array.from(
     { length: lanes },
     () => new ReusableBrowserDriver(driver),
