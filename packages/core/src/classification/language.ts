@@ -129,6 +129,25 @@ export function isClaimSentence(sentence: string): boolean {
   return validClaimTail({ predicate: predicate[1]!, tail });
 }
 
+/**
+ * Whether `ai.holds` can accept a sentence as a read-only claim from its words
+ * alone: a recognizable claim shape that names no action or wait. Offline
+ * validation and the runtime share this rule, so a claim `sedum validate`
+ * accepts is not sent to a model that would answer it as an unclear step.
+ */
+export function isStaticHoldsClaim(sentence: string): boolean {
+  const text = canonicalSentence(sentence);
+  const preflight = preflightSentence(text);
+  const operation = patternOperation(text);
+  return (
+    text !== "" &&
+    (preflight === null || preflight === "unsupported") &&
+    !WAIT_UNTIL.test(text) &&
+    (operation === null || operation === "verify") &&
+    isClaimSentence(text)
+  );
+}
+
 function hasDirectFollowUp(syntax: SentenceSyntax): boolean {
   return new RegExp(
     `(?:\\b(?:then|and)\\s+(?:(?:also|then)\\s+)?|[;,]\\s*)(?:${ACTION_VERBS})\\b`,

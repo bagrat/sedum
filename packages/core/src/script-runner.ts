@@ -9,7 +9,11 @@ import {
   classifySentenceSteps,
   type ClassifiedFlowSentence,
 } from "./flow-classification.js";
-import { WAIT_UNTIL } from "./classification.js";
+import {
+  isStaticHoldsClaim,
+  WAIT_UNTIL,
+  type ClassifiedStep,
+} from "./classification.js";
 import {
   closeQuietly,
   executeSentence,
@@ -223,6 +227,17 @@ function sentenceStep(text: string, source: FlowSource): SentenceStep {
     tokens: tokenizeStep(text).tokens,
     source,
     sourceStack: [source],
+  };
+}
+
+/** An `ai.holds` claim accepted from its words, without a classification call. */
+function claimStep(step: SentenceStep): ClassifiedStep {
+  return {
+    sentence: step.text,
+    source: step.source,
+    op: "verify",
+    classificationSource: "pattern",
+    probability: null,
   };
 }
 
@@ -520,17 +535,21 @@ export async function runScriptTest(
               `Pass it as the second argument: ai(${JSON.stringify(text)}, { ${token.key}: ... }).`,
             );
         const template = sentenceStep(text, source);
-        const checked = await classifySentenceSteps(
-          [template],
-          classifyOptions,
-        );
-        if (report && checked.classification.calls.length)
+        // A literal claim is taken from its words, as `sedum validate` takes
+        // it; a model asked to classify a bare claim answers an unclear step.
+        const claim = check && isStaticHoldsClaim(text);
+        const checked = claim
+          ? null
+          : await classifySentenceSteps([template], classifyOptions);
+        if (report && checked?.classification.calls.length)
           await report.test.addAttemptCalls(
             checked.classification.calls.map((call) =>
               resultCall(call, "classification"),
             ),
           );
-        const classified = checked.classification.steps[0];
+        const classified = checked
+          ? checked.classification.steps[0]
+          : claimStep(template);
         if (
           check &&
           classified &&
@@ -541,8 +560,8 @@ export async function runScriptTest(
             "ai.holds takes one claim about the page.",
             'Write ai.holds("the passkey screen is shown").',
           );
-        if (checked.diagnostics.length || !classified) {
-          const diagnostic = checked.diagnostics[0];
+        if (checked?.diagnostics.length || !classified) {
+          const diagnostic = checked?.diagnostics[0];
           stop({
             status: "could_not_run",
             file: absolute,
