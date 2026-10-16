@@ -35,8 +35,8 @@ export interface ProjectConfigOverrides {
   readonly baseUrl?: string;
   readonly vision?: {
     readonly enabled?: boolean;
-    readonly model?: string;
   };
+  readonly screenshots?: boolean;
 }
 
 export interface ResolvedProjectConfig {
@@ -57,25 +57,25 @@ export interface ResolvedProjectConfig {
   readonly providerName: "typesafe" | "clef" | "openrouter";
   readonly apiKey: string | undefined;
   readonly apiKeyEnv?: string;
-  readonly visionApiKeyEnv?: string;
   /** Integration secrets retained for redaction, never injected into tests. */
   readonly credentialValues?: readonly string[];
   readonly cloudflareAccountId: string | undefined;
   readonly providerBaseUrl: string;
   readonly providerModel: string;
-  readonly vision: {
-    readonly enabled: boolean;
-    readonly model: string;
-    readonly timeoutMs: number;
-  };
-  readonly visionApiKey: string | undefined;
+  /** Ask the provider's image model about ambiguous or unmatched clicks. */
+  readonly vision: { readonly enabled: boolean };
+  /**
+   * Send viewport screenshots to the provider (TypeSafe images preview): a
+   * visual check of each model-resolved target, and the Judge's evidence.
+   * On by default for the direct TypeSafe endpoint only.
+   */
+  readonly screenshots: boolean;
 }
 
 interface RawEnvironment {
   readonly baseUrl?: unknown;
   readonly variables?: unknown;
   readonly provider?: unknown;
-  readonly vision?: unknown;
 }
 
 interface RawConfig extends RawEnvironment {
@@ -90,6 +90,7 @@ interface RawConfig extends RawEnvironment {
   readonly environments?: unknown;
   readonly vision?: unknown;
   readonly provider?: unknown;
+  readonly screenshots?: unknown;
 }
 
 const DEFAULTS = {
@@ -105,11 +106,7 @@ const DEFAULTS = {
   },
   outputDir: ".sedum/runs",
   reporterDir: ".sedum/reports",
-  vision: {
-    enabled: false,
-    model: "google/gemini-3.8-flash",
-    timeoutMs: 10_000,
-  },
+  vision: { enabled: false },
 };
 
 export const DEFAULT_PROVIDER_BASE_URL = "https://api.typesafe.ai";
@@ -130,13 +127,14 @@ const allowed = {
     "environments",
     "vision",
     "provider",
+    "screenshots",
   ]),
   tests: new Set(["directory", "include", "exclude"]),
   affected: new Set(["ignore"]),
   viewport: new Set(["width", "height"]),
   thresholds: new Set(["verify", "lowConfidenceBand", "contradiction"]),
-  environment: new Set(["baseUrl", "variables", "provider", "vision"]),
-  vision: new Set(["enabled", "model", "timeoutMs", "apiKeyEnv"]),
+  environment: new Set(["baseUrl", "variables", "provider"]),
+  vision: new Set(["enabled"]),
   provider: new Set(["name", "model", "apiKeyEnv"]),
 };
 
@@ -168,6 +166,39 @@ function diagnostic(
   });
 }
 
+/** Keys that once configured the OpenRouter vision resolver. */
+const REMOVED_KEYS: Readonly<Record<string, string>> = {
+  "vision.model":
+    "Vision fallback now uses the TypeSafe provider's image model.",
+  "vision.timeoutMs":
+    "Vision fallback now uses the TypeSafe provider's request deadline.",
+  "vision.apiKeyEnv":
+    "Vision fallback now uses the TypeSafe provider's API key.",
+};
+
+/** The diagnostic code, message and fix for a key that is not allowed. */
+function keyProblem(
+  path: string,
+  key: string,
+  names: ReadonlySet<string>,
+): readonly [string, string, string] | null {
+  const removed = Object.hasOwn(REMOVED_KEYS, path)
+    ? REMOVED_KEYS[path]
+    : undefined;
+  if (removed)
+    return [
+      "removed_config_key",
+      `Configuration key \`${path}\` was removed. ${removed}`,
+      `Delete \`${path}\` from ${CONFIG_FILE}.`,
+    ];
+  if (names.has(key)) return null;
+  return [
+    "unknown_config_key",
+    `Unknown configuration key \`${path}\`.`,
+    keyFix(key, names),
+  ];
+}
+
 function mapUnknownKeys(
   value: unknown,
   names: ReadonlySet<string>,
@@ -179,16 +210,16 @@ function mapUnknownKeys(
   if (!isMap(value)) return;
   for (const pair of value.items) {
     const key = String(pair.key);
-    if (!names.has(key))
+    const path = prefix ? `${prefix}.${key}` : key;
+    const problem = keyProblem(path, key, names);
+    if (problem)
       diagnostic(
         diagnostics,
         file,
         counter,
         pair.key as Node,
-        prefix ? `${prefix}.${key}` : key,
-        "unknown_config_key",
-        `Unknown configuration key \`${prefix ? `${prefix}.` : ""}${key}\`.`,
-        keyFix(key, names),
+        path,
+        ...problem,
       );
   }
 }
@@ -720,10 +751,10 @@ export async function loadProjectConfig(
   const environments = object(raw.environments) ? raw.environments : {};
   const vision = object(raw.vision) ? raw.vision : {};
   const provider = object(raw.provider) ? raw.provider : {};
-  const credentialSettings = [
-    ["provider", provider],
-    ["vision", vision],
-  ] as [string, Record<string, unknown>][];
+  const credentialSettings = [["provider", provider]] as [
+    string,
+    Record<string, unknown>,
+  ][];
   for (const [name, value] of Object.entries(environments)) {
     if (!object(value)) {
       diagnostic(
@@ -738,30 +769,28 @@ export async function loadProjectConfig(
       );
       continue;
     }
-    for (const section of ["provider", "vision"]) {
-      const key = `environments.${name}.${section}`;
-      const settings = value[section];
-      mapUnknownKeys(
-        node(key),
-        new Set(["apiKeyEnv"]),
-        key,
+    const key = `environments.${name}.provider`;
+    const settings = value.provider;
+    mapUnknownKeys(
+      node(key),
+      new Set(["apiKeyEnv"]),
+      key,
+      file,
+      counter,
+      diagnostics,
+    );
+    if (settings !== undefined && !object(settings))
+      diagnostic(
+        diagnostics,
         file,
         counter,
-        diagnostics,
+        node(key),
+        key,
+        "invalid_config_type",
+        `Configuration key \`${key}\` must be a mapping.`,
+        `Write \`${key}: { apiKeyEnv: MY_API_KEY }\`.`,
       );
-      if (settings !== undefined && !object(settings))
-        diagnostic(
-          diagnostics,
-          file,
-          counter,
-          node(key),
-          key,
-          "invalid_config_type",
-          `Configuration key \`${key}\` must be a mapping.`,
-          `Write \`${key}: { apiKeyEnv: MY_API_KEY }\`.`,
-        );
-      if (object(settings)) credentialSettings.push([key, settings]);
-    }
+    if (object(settings)) credentialSettings.push([key, settings]);
     scalarVariables(
       value.variables,
       `environments.${name}.variables`,
@@ -820,9 +849,7 @@ export async function loadProjectConfig(
   const selectedProvider = object(environment.provider)
     ? environment.provider
     : {};
-  const selectedVision = object(environment.vision) ? environment.vision : {};
   const apiKeyEnv = selectedProvider.apiKeyEnv ?? provider.apiKeyEnv;
-  const visionApiKeyEnv = selectedVision.apiKeyEnv ?? vision.apiKeyEnv;
 
   const browserValue = overrides.browser ?? raw.browser ?? DEFAULTS.browser;
   const browser =
@@ -1109,13 +1136,7 @@ export async function loadProjectConfig(
         "CLOUDFLARE_ACCOUNT_ID must be exactly 32 hexadecimal characters.",
       fix: "Copy the account ID from the Cloudflare dashboard.",
     });
-  const visionApiKey =
-    typeof visionApiKeyEnv === "string"
-      ? providerValue(visionApiKeyEnv)
-      : openRouterKey;
-  const credentialValues = [apiKey, visionApiKey].filter(
-    (value) => value !== undefined,
-  );
+  const credentialValues = [apiKey].filter((value) => value !== undefined);
   for (const [, settings] of credentialSettings) {
     if (typeof settings.apiKeyEnv !== "string") continue;
     const name = settings.apiKeyEnv;
@@ -1169,34 +1190,24 @@ export async function loadProjectConfig(
       "Configuration key `vision.enabled` must be a boolean.",
       "Use `vision.enabled: true` or `vision.enabled: false`.",
     );
-  const visionModelValue = overrides.vision?.model ?? vision.model;
-  const visionModel = visionModelValue ?? DEFAULTS.vision.model;
-  if (typeof visionModel !== "string" || !visionModel.trim())
+  const screenshotsValue = overrides.screenshots ?? raw.screenshots;
+  if (screenshotsValue !== undefined && typeof screenshotsValue !== "boolean")
     diagnostic(
       diagnostics,
       file,
       counter,
-      node("vision.model"),
-      "vision.model",
+      node("screenshots"),
+      "screenshots",
       "invalid_config_type",
-      "Configuration key `vision.model` must be nonempty text.",
-      `Use a model such as \`${DEFAULTS.vision.model}\`.`,
+      "Configuration key `screenshots` must be a boolean.",
+      "Use `screenshots: true` or `screenshots: false`.",
     );
-  const visionTimeoutValue = vision.timeoutMs ?? DEFAULTS.vision.timeoutMs;
-  if (
-    !Number.isSafeInteger(visionTimeoutValue) ||
-    (visionTimeoutValue as number) < 1
-  )
-    diagnostic(
-      diagnostics,
-      file,
-      counter,
-      node("vision.timeoutMs"),
-      "vision.timeoutMs",
-      "invalid_config_type",
-      "Configuration key `vision.timeoutMs` must be a positive integer.",
-      "Use a timeout such as `10000`.",
-    );
+  // Gateways and compatible services may not accept the images preview.
+  const screenshots =
+    typeof screenshotsValue === "boolean"
+      ? screenshotsValue
+      : providerName === "typesafe" &&
+        providerBaseUrl === DEFAULT_PROVIDER_BASE_URL;
   const testDirectory = relativePath(
     found.root,
     tests.directory,
@@ -1266,23 +1277,11 @@ export async function loadProjectConfig(
     apiKey,
     credentialValues,
     ...(typeof apiKeyEnv === "string" ? { apiKeyEnv } : {}),
-    ...(typeof visionApiKeyEnv === "string" ? { visionApiKeyEnv } : {}),
     cloudflareAccountId,
     providerBaseUrl,
     providerModel,
-    vision: {
-      enabled: visionEnabled === true,
-      model:
-        typeof visionModel === "string" && visionModel.trim()
-          ? visionModel
-          : DEFAULTS.vision.model,
-      timeoutMs:
-        Number.isSafeInteger(visionTimeoutValue) &&
-        (visionTimeoutValue as number) > 0
-          ? (visionTimeoutValue as number)
-          : DEFAULTS.vision.timeoutMs,
-    },
-    visionApiKey,
+    vision: { enabled: visionEnabled === true },
+    screenshots: screenshots && providerName !== "clef",
   });
 }
 

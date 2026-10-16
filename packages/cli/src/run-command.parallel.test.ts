@@ -358,17 +358,6 @@ describe("parallel sedum run", () => {
       environment: "staging",
     });
     expect(staging.result.verdict).toBe("passed");
-    await writeFile(
-      path.join(root!, "sedum.config.yaml"),
-      "vision: { apiKeyEnv: SIGHT }\n",
-    );
-    const vision = await executeRunCommand({
-      ...base,
-      paths: names,
-      vision: true,
-    });
-    expect(vision.diagnostic?.message).toContain("SIGHT");
-    expect(vision.diagnostic?.fix).not.toContain("OPEN_ROUTER_API_KEY");
   });
 
   it("reports missing and rejected Clef credentials without TypeSafe advice or secret leakage", async () => {
@@ -402,6 +391,30 @@ describe("parallel sedum run", () => {
     expect(rejected.diagnostic?.fix).toContain("CLOUDFLARE_ACCOUNT_ID");
     expect(JSON.stringify(rejected)).not.toContain("run-sentinel-secret");
     expect(JSON.stringify(rejected)).not.toContain("TYPESAFE_API_KEY");
+  });
+
+  it("asks the run's provider for vision, and only when it may send screenshots", async () => {
+    const names = await project(1);
+    let resolver: FlowRunnerDependencies["visionResolver"];
+    state.behavior = async (_file, dependencies) => {
+      resolver = dependencies.visionResolver;
+      return "passed";
+    };
+    const on = await executeRunCommand({ ...base, paths: names, vision: true });
+    expect(on.diagnostic).toBeNull();
+    expect(on.result.execution?.vision).toEqual({ model: "jev-1.14.0" });
+    expect(resolver).toHaveProperty("chooseFromScreenshot");
+
+    const off = await executeRunCommand({
+      ...base,
+      paths: names,
+      vision: true,
+      screenshots: false,
+    });
+    expect(off.diagnostic).toMatchObject({
+      code: "vision_needs_screenshots",
+    });
+    expect(vi.mocked(runFlow)).toHaveBeenCalledTimes(1);
   });
 
   it("records a test-scoped error on its test and runs every other test", async () => {

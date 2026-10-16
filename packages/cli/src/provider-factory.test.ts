@@ -46,8 +46,8 @@ function config(name: "typesafe" | "clef"): ResolvedProjectConfig {
       name === "clef" ? "0123456789abcdef0123456789abcdef" : undefined,
     providerBaseUrl: "https://api.typesafe.ai",
     providerModel: name === "clef" ? "clef" : "jev-latest",
-    vision: { enabled: false, model: "vision", timeoutMs: 10_000 },
-    visionApiKey: undefined,
+    vision: { enabled: false },
+    screenshots: false,
   };
 }
 

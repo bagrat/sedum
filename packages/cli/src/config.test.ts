@@ -29,7 +29,7 @@ describe("project configuration", () => {
       const root = await temporaryRoot();
       await writeFile(
         path.join(root, "sedum.config.yaml"),
-        `provider: { apiKeyEnv: ${name} }\nvision: { apiKeyEnv: ${name} }\n`,
+        `provider: { apiKeyEnv: ${name} }\n`,
       );
       const offline = await loadProjectConfig(
         root,
@@ -38,12 +38,10 @@ describe("project configuration", () => {
         { readEnvironmentFile: false },
       );
       expect(offline.apiKey).toBeUndefined();
-      expect(offline.visionApiKey).toBeUndefined();
       const fromProcess = await loadProjectConfig(root, {
         [name]: "process-sentinel",
       });
       expect(fromProcess.apiKey).toBe("process-sentinel");
-      expect(fromProcess.visionApiKey).toBe("process-sentinel");
     },
   );
 
@@ -53,42 +51,37 @@ describe("project configuration", () => {
       const root = await temporaryRoot();
       await writeFile(
         path.join(root, "sedum.config.yaml"),
-        `provider: { apiKeyEnv: ${name} }\nvision: { apiKeyEnv: ${name} }\n`,
+        `provider: { apiKeyEnv: ${name} }\n`,
       );
       await writeFile(path.join(root, ".env"), `${name}=file-sentinel\n`);
       const fromFile = await loadProjectConfig(root, {});
       expect(fromFile.apiKey).toBe("file-sentinel");
-      expect(fromFile.visionApiKey).toBe("file-sentinel");
     },
   );
 
   it.each(["typesafe", "openrouter", "clef"])(
-    "resolves custom %s and vision keys with environment and source precedence",
+    "resolves a custom %s key with environment and source precedence",
     async (name) => {
       const root = await temporaryRoot();
       await writeFile(
         path.join(root, "sedum.config.yaml"),
         `
 provider: { name: ${name}, apiKeyEnv: FOO }
-vision: { apiKeyEnv: SIGHT }
 environments:
   local:
     provider: { apiKeyEnv: LOCAL_FOO }
-    vision: { apiKeyEnv: LOCAL_SIGHT }
   staging: {}
 `,
       );
       await writeFile(
         path.join(root, ".env"),
-        "FOO=file-key\nSIGHT=file-vision\nLOCAL_FOO=local-key\nLOCAL_SIGHT=local-vision\n",
+        "FOO=file-key\nLOCAL_FOO=local-key\n",
       );
-      const host = { FOO: " process-key ", SIGHT: " process-vision " };
+      const host = { FOO: " process-key " };
       const top = await loadProjectConfig(root, host);
       expect(top.apiKey).toBe("process-key");
-      expect(top.visionApiKey).toBe("process-vision");
       expect(top.variables.FOO).toBeUndefined();
       expect(top.variables.LOCAL_FOO).toBeUndefined();
-      expect(top.variables.SIGHT).toBeUndefined();
       expect(
         (await loadProjectConfig(root, {}, { environment: "staging" })).apiKey,
       ).toBe("file-key");
@@ -96,7 +89,6 @@ environments:
         environment: "local",
       });
       expect(local.apiKey).toBe("local-key");
-      expect(local.visionApiKey).toBe("local-vision");
       await writeFile(path.join(root, ".env"), "");
       const missing = await loadProjectConfig(root, {
         TYPESAFE_API_KEY: "wrong",
@@ -104,16 +96,10 @@ environments:
         CLOUDFLARE_AUTH_TOKEN: "wrong",
       });
       expect(missing.apiKey).toBeUndefined();
-      expect(missing.visionApiKey).toBeUndefined();
     },
   );
 
-  it.each([
-    "provider",
-    "vision",
-    "environments.local.provider",
-    "environments.local.vision",
-  ])(
+  it.each(["provider", "environments.local.provider"])(
     "rejects invalid variable names in %s even in unselected environments",
     async (key) => {
       const root = await temporaryRoot();
@@ -198,11 +184,7 @@ environments:
       providerName: "typesafe",
       providerBaseUrl: "https://api.typesafe.ai",
       providerModel: "jev-latest",
-      vision: {
-        enabled: false,
-        model: "google/gemini-3.8-flash",
-        timeoutMs: 10000,
-      },
+      vision: { enabled: false },
     });
     expect(config.testDirectory).toBe(path.join(root, "tests"));
     expect(config.outputDir).toBe(path.join(root, ".sedum", "runs"));
@@ -252,7 +234,6 @@ environments:
         providerBaseUrl: "https://openrouter.ai/api",
         providerModel: "typesafe/jev-1.13",
         apiKey: "host-key",
-        visionApiKey: "host-key",
         vision: { enabled: false },
       });
       expect(config.variables[name]).toBeUndefined();
@@ -375,30 +356,53 @@ environments:
     });
   });
 
-  it("validates vision settings and reads its credential only from the environment", async () => {
+  it("turns screenshots on only for the direct TypeSafe API unless configured", async () => {
+    const root = await temporaryRoot();
+    const load = async (env: Record<string, string> = {}, config?: string) => {
+      if (config !== undefined)
+        await writeFile(path.join(root, "sedum.config.yaml"), config);
+      return (await loadProjectConfig(root, env)).screenshots;
+    };
+    expect(await load()).toBe(true);
+    expect(await load({ TYPESAFE_BASE_URL: "https://example.com" })).toBe(
+      false,
+    );
+    expect(await load({}, "provider:\n  name: clef\n")).toBe(false);
+    expect(await load({}, "screenshots: false\n")).toBe(false);
+    expect(
+      await load(
+        { TYPESAFE_BASE_URL: "https://example.com" },
+        "screenshots: true\n",
+      ),
+    ).toBe(true);
+    await expect(
+      loadProjectConfig(root, {}, { screenshots: false }),
+    ).resolves.toMatchObject({ screenshots: false });
+    await writeFile(path.join(root, "sedum.config.yaml"), "screenshots: yes\n");
+    await expect(loadProjectConfig(root, {})).rejects.toMatchObject({
+      diagnostics: [expect.objectContaining({ key: "screenshots" })],
+    });
+  });
+
+  it("validates vision settings and names the removed OpenRouter keys", async () => {
     const root = await temporaryRoot();
     await writeFile(
       path.join(root, "sedum.config.yaml"),
-      `vision:
-  enabled: true
-  model: openrouter/example
-  timeoutMs: 2500
-`,
+      "vision:\n  enabled: true\n",
     );
-    await writeFile(path.join(root, ".env"), "OPEN_ROUTER_API_KEY=file-key\n");
     await expect(loadProjectConfig(root, {})).resolves.toMatchObject({
-      vision: { enabled: true, model: "openrouter/example", timeoutMs: 2500 },
-      visionApiKey: "file-key",
-      variables: { OPEN_ROUTER_API_KEY: undefined },
+      vision: { enabled: true },
     });
 
     await writeFile(
       path.join(root, "sedum.config.yaml"),
       `vision:
   enabled: yes
-  model: ""
-  timeoutMs: 0
+  model: google/gemini-3.8-flash
+  timeoutMs: 2500
+  apiKeyEnv: SIGHT
   retry: true
+constructor: 1
 variables:
   OPEN_ROUTER_API_KEY: forbidden
 `,
@@ -410,8 +414,23 @@ variables:
           code: "unknown_config_key",
         }),
         expect.objectContaining({ key: "vision.enabled" }),
-        expect.objectContaining({ key: "vision.model" }),
-        expect.objectContaining({ key: "vision.timeoutMs" }),
+        expect.objectContaining({
+          key: "vision.model",
+          code: "removed_config_key",
+          fix: "Delete `vision.model` from sedum.config.yaml.",
+        }),
+        expect.objectContaining({
+          key: "vision.timeoutMs",
+          code: "removed_config_key",
+        }),
+        expect.objectContaining({
+          key: "vision.apiKeyEnv",
+          code: "removed_config_key",
+        }),
+        expect.objectContaining({
+          key: "constructor",
+          code: "unknown_config_key",
+        }),
         expect.objectContaining({
           key: "variables.OPEN_ROUTER_API_KEY",
           code: "api_key_in_config",

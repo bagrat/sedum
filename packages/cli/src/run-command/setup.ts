@@ -21,8 +21,11 @@ export async function resolveRunConfig(
     ...(options.outputDir ? { outputDir: options.outputDir } : {}),
     ...(options.reporterDir ? { reporterDir: options.reporterDir } : {}),
     ...visionOverride(options),
+    ...(options.screenshots === undefined
+      ? {}
+      : { screenshots: options.screenshots }),
   });
-  validateVisionKey(config);
+  validateVision(config);
   return config;
 }
 
@@ -73,31 +76,25 @@ function isValidOverride(value: string): boolean {
 }
 
 function visionOverride(options: RunCommandOptions): object {
-  if (options.vision === undefined && options.visionModel === undefined)
-    return {};
-  return {
-    vision: {
-      ...(options.vision !== undefined ? { enabled: options.vision } : {}),
-      ...(options.visionModel !== undefined
-        ? { model: options.visionModel }
-        : {}),
-    },
-  };
+  return options.vision === undefined
+    ? {}
+    : { vision: { enabled: options.vision } };
 }
 
-function validateVisionKey(config: ResolvedProjectConfig): void {
-  if (!config.vision.enabled) return;
-  if (config.visionApiKey) return;
-  const keyName = config.visionApiKeyEnv ?? "OPEN_ROUTER_API_KEY";
+/** Vision reads a screenshot, so it needs the screenshots that a run may send. */
+function validateVision(config: ResolvedProjectConfig): void {
+  if (!config.vision.enabled || config.screenshots) return;
   throw new ProjectConfigError([
     {
-      code: "missing_vision_api_key",
-      file: path.join(config.projectRoot, ".env"),
+      code: "vision_needs_screenshots",
+      file:
+        config.configPath ?? path.join(config.projectRoot, "sedum.config.yaml"),
       line: 1,
       col: 1,
-      key: keyName,
-      message: `Vision fallback requires ${keyName}.`,
-      fix: `Set ${keyName} in the invoking process or project-root .env, or disable vision.`,
+      key: "vision.enabled",
+      message:
+        "Vision fallback sends screenshots to the provider, but screenshots are off for this run.",
+      fix: "Use the TypeSafe API with screenshots on (the default there), or turn vision off with --no-vision.",
     },
   ]);
 }

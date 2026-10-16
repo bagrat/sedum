@@ -26,10 +26,11 @@ thresholds:
 # Optional. TypeSafe with jev-latest remains the default.
 # provider: { name: clef, model: clef }
 
+# Send screenshots to TypeSafe (default: on for the direct TypeSafe API).
+screenshots: true
+
 vision:
   enabled: false
-  model: google/gemini-3.8-flash
-  timeoutMs: 10000
 
 outputDir: .sedum/runs
 reporterDir: .sedum/reports
@@ -53,8 +54,8 @@ explicit `sedum run path/to/file.test.ts` remains supported.
 
 Settings resolve from defaults, then the top-level config, then the selected
 named environment, then explicit command overrides. Named environments may
-override `baseUrl`, `variables`, `provider.apiKeyEnv`, and `vision.apiKeyEnv`. Nested settings merge by field, so an
-override of viewport width retains the configured height.
+override `baseUrl`, `variables`, and `provider.apiKeyEnv`. Nested settings
+merge by field, so an override of viewport width retains the configured height.
 For `sedum run`, `--env` selects the named environment before `--browser` and
 `--output-dir` override their configured values. `--url-override` then replaces
 the origin of the resolved entry URL, preserving its path, query, and fragment.
@@ -73,19 +74,15 @@ be committed.
 ### Custom credential variable names
 
 Use `provider.apiKeyEnv` to name the environment variable holding the selected
-provider's key or token, and `vision.apiKeyEnv` for the OpenRouter vision key:
+provider's key or token. The vision fallback uses the same provider and key:
 
 ```yaml
 provider:
   apiKeyEnv: TYPESAFE_LOCAL_E2E_API_KEY
-vision:
-  apiKeyEnv: OPENROUTER_LOCAL_E2E_API_KEY
 environments:
   staging:
     provider:
       apiKeyEnv: TYPESAFE_STAGING_API_KEY
-    vision:
-      apiKeyEnv: OPENROUTER_STAGING_API_KEY
 ```
 
 `sedum run --env staging` and `sedum doctor --env staging` use the named
@@ -102,7 +99,7 @@ explicit process environment value works. Prefer conventional uppercase names
 such as `TYPESAFE_LOCAL_E2E_API_KEY` for portability.
 
 Without these settings, existing behavior is unchanged: TypeSafe reads
-`TYPESAFE_API_KEY`; OpenRouter (including vision) reads `OPENROUTER_API_KEY`
+`TYPESAFE_API_KEY`; OpenRouter reads `OPENROUTER_API_KEY`
 or `OPEN_ROUTER_API_KEY`; Clef reads `CLOUDFLARE_AUTH_TOKEN` or
 `CLOUDFLARE_API_TOKEN`. For Clef, `provider.apiKeyEnv` renames the token source;
 `CLOUDFLARE_ACCOUNT_ID` is still required. Doctor, run diagnostics, and newly
@@ -154,8 +151,6 @@ Set `OPENROUTER_API_KEY` in your shell or project-root `.env`. The existing
 `OPEN_ROUTER_API_KEY` spelling is also accepted. Process values override `.env`
 across both names; within one source, `OPENROUTER_API_KEY` wins. Neither name
 may appear in config variables, and neither is forwarded to test variables.
-The same key can serve the opt-in vision fallback, but selecting OpenRouter
-does not enable vision.
 
 Sedum uses OpenRouter's [TypeSafe-compatible System One endpoint](https://openrouter.ai/docs/guides/community/typesafe-sdk)
 at `https://openrouter.ai/api/v1/systemone`, not chat completions. Fully qualified
@@ -192,7 +187,7 @@ environment or project-root `.env`. Cloudflare's conventional
 over `.env` across both names; differing values for both names at the winning
 level are rejected as ambiguous. Sedum builds the fixed Cloudflare account and
 model route; Clef does not support a custom endpoint. Selecting Clef does not
-change the default for other projects and does not enable vision. See [Clef
+change the default for other projects. See [Clef
 provider](provider-clef.md) for scope, privacy, costs, and testing.
 
 An absolute test `url` is unchanged. A relative test URL resolves against
@@ -241,18 +236,33 @@ See [Git-diff selection](cli.md#experimental-git-diff-selection) for lossless
 chunking, costs, receipts, and the unverified accuracy caveat. Keep full-suite
 CI; this experimental feature is not a mandatory gate.
 
+## Screenshots
+
+`screenshots` (default `true` for the direct TypeSafe API, `false` for
+gateways, compatible services and Clef) sends viewport screenshots to the
+provider: an outlined screenshot that checks each model-resolved target for
+ambiguity, and a screenshot with each `verify` and `measure` step. `sedum run
+--screenshots` and `--no-screenshots` override it for one run. Screenshots are
+not redacted and are never sent for pages matched by `--sensitive-origin`. See
+[Screenshots](provider-typesafe.md#screenshots) for cost and behavior.
+
 ## Vision fallback (opt-in)
 
 Vision fallback is disabled by default. Enable it with `vision.enabled: true`
-or `sedum run --vision`; `--no-vision` disables it, and `--vision-model`
-overrides the configured model. An enabled run requires the exact credential
-`OPEN_ROUTER_API_KEY` from the invoking process or project-root `.env`. The
-credential is never accepted in YAML. The default model is
-`google/gemini-3.8-flash`, with a 10-second request timeout.
+or `sedum run --vision`; `--no-vision` disables it for one run. It uses the
+run's TypeSafe provider and key: Jev's image model (`jev-1.14.0`, the TypeSafe
+images preview) reads a viewport screenshot in which every visible candidate
+is boxed and labelled. It needs [screenshots](#screenshots), so it is
+available on the direct TypeSafe API, where screenshots are on by default. A
+run with vision on and screenshots off (Clef, a gateway, `screenshots: false`
+or `--no-screenshots`) stops before tests start with
+`vision_needs_screenshots`. `vision.model` and `vision.timeoutMs`, which
+configured the earlier OpenRouter resolver, are rejected with a fix; delete
+them.
 
-Enabling vision sends **unredacted viewport screenshots** to OpenRouter and the
-configured model. Use non-sensitive pages. Text redaction does
-not redact screenshot pixels.
+Enabling vision sends **unredacted viewport screenshots** to TypeSafe. Use
+non-sensitive pages. Text redaction does not redact screenshot pixels, and no
+screenshot is sent for pages matched by `--sensitive-origin`.
 
 With vision enabled, ambiguous clicks use visual evidence instead of the
 default permissive Jev repeated-member pick. Existing deterministic resolution
@@ -265,11 +275,16 @@ ambiguous, or when Jev finds no matching element at all, for example a target
 described by its picture. In the second case vision chooses among every
 visible control or abstains, and an abstention keeps the step's `none`.
 Missing controls, fills, assertions, and provider failures do not activate it.
-The model selects a labeled existing candidate or abstains. Unknown IDs and
-changed page versions are rejected; execution still uses Sedum's normal target
-and actionability checks. Visual layout changes without a DOM revision are not
-detected. Only fully visible, unobscured controls are offered; fewer than two
-or more than 40 visible controls leave the step unresolved.
+Jev answers one Choice over the labels plus `ambiguous` and `no_match`, and
+how many elements on screen fit the step. A label is used only at a
+probability of at least 0.9, and only when Jev does not think that no element
+(probability 0.3 or more) or several elements (0.5 or more) fit; otherwise
+the step abstains. Unknown IDs and changed page versions are rejected;
+execution still uses Sedum's normal target and actionability checks, and the
+[target check](provider-typesafe.md#screenshots) still reviews the pick. Visual
+layout changes without a DOM revision are not detected. Only fully visible,
+unobscured controls are offered; fewer than two or more than 40 visible
+controls leave the step unresolved.
 
 There is at most one vision call per step, with no recovery after failure.
 After vision is attempted, a stale action target fails without re-resolving.
@@ -281,23 +296,16 @@ succeeded: the step verdict still reports execution separately. Text-model
 confidence is not presented as vision confidence.
 Usage summaries separate text and vision calls across all attempts, including
 earlier retries. CLI usage is shown in interactive terminals or with `--costs`;
-fallback details are also shown in non-interactive output.
-Vision costs use OpenRouter's reported `usage.cost`, without inventing separate
-input/output dollar charges. Missing costs keep the total incomplete while the
-known subtotal remains visible. These are spend reports, not budget limits.
-Locator diagnostics include vision request duration and a safe failure category
-(HTTP error/status, timeout, cancellation, connection, malformed response,
-invalid selection, or truncation). These fields are preserved in the canonical
-run result at `steps[].locator.vision`; failures also appear in the step error
-message. Upstream error bodies are not retained.
-An HTTP 429 means rate limiting, not a model abstention; the step remains
-unresolved and is not retried.
+fallback details are also shown in non-interactive output. Vision calls are
+priced at the Jev rate; see [Screenshots](provider-typesafe.md#screenshots).
+Locator diagnostics include vision request duration and a safe failure
+category (timeout, cancellation, connection, a rejected request, or an
+invalid response). These fields are preserved in the canonical run result at
+`steps[].locator.vision`; failures also appear in the step error message.
+A rejected key or exhausted rate limit stops the run, as it does for every
+other provider request.
 
-When vision is enabled, `sedum run` checks `OPEN_ROUTER_API_KEY` once before
-tests start, using OpenRouter's unbilled key endpoint. The run summary says
-which vision model was enabled and on how many steps it ran, and warns when
-OpenRouter rejected the key. A click that fails without vision being able
-to run says why, for example because fewer than two controls were fully
-visible. `sedum
-doctor` checks the key when `vision.enabled` is true, or with
-`sedum doctor --vision`.
+The run summary says which vision model was enabled and on how many steps it
+ran. A click that fails without vision being able to run says why, for
+example because fewer than two controls were fully visible. `sedum doctor`
+fails its `vision` check when vision is enabled but screenshots are off.

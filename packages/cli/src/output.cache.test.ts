@@ -111,8 +111,8 @@ describe("cache outcome in terminal summary", () => {
         {
           purpose: "locator",
           modality: "vision",
-          requestedModel: "google/gemini-3.8-flash",
-          model: "google/gemini-3.8-flash",
+          requestedModel: "jev-1.14.0",
+          model: "jev-1.14.0",
           attempts: 1,
           inputTokens: 123,
           outputTokens: 17,
@@ -145,7 +145,7 @@ describe("cache outcome in terminal summary", () => {
         costs,
       );
       expect(text).toContain(
-        "Vision fallback: selected · google/gemini-3.8-flash · 2100 ms",
+        "Vision fallback: selected · jev-1.14.0 · 2100 ms",
       );
       expect(
         text.includes(
@@ -157,18 +157,18 @@ describe("cache outcome in terminal summary", () => {
 });
 
 describe("vision fallback in terminal summary", () => {
-  it("says whether vision ran and warns about a rejected key", async () => {
-    const render = async (key: "accepted" | "rejected") => {
-      const recorder = new RunRecorder(async () => undefined, `vision-${key}`);
-      await recorder.start();
-      await recorder.selectTests(0, {
-        parallel: { requested: 1, lanes: 1 },
-        shard: null,
-        providerConcurrency: 2,
-        vision: { model: "google/gemini-3.8-flash", key },
-      });
-      await recorder.finish();
-      return renderRunSummary(
+  it("says whether vision ran", async () => {
+    const recorder = new RunRecorder(async () => undefined, "vision-on");
+    await recorder.start();
+    await recorder.selectTests(0, {
+      parallel: { requested: 1, lanes: 1 },
+      shard: null,
+      providerConcurrency: 2,
+      vision: { model: "jev-1.14.0" },
+    });
+    await recorder.finish();
+    expect(
+      renderRunSummary(
         recorder.snapshot,
         { stdoutIsTTY: false, stderrIsTTY: false, color: false },
         {
@@ -177,15 +177,7 @@ describe("vision fallback in terminal summary", () => {
           authoritative: true,
         },
         false,
-      );
-    };
-    const accepted = await render("accepted");
-    expect(accepted).toContain(
-      "vision google/gemini-3.8-flash: enabled, no fallback attempted",
-    );
-    expect(accepted).not.toContain("vision warning");
-    expect(await render("rejected")).toContain(
-      "vision warning: OpenRouter rejected OPEN_ROUTER_API_KEY",
-    );
+      ),
+    ).toContain("vision jev-1.14.0: enabled, no fallback attempted");
   });
 });

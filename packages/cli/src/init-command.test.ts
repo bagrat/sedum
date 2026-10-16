@@ -32,7 +32,7 @@ describe("sedum init", () => {
     const cwd = await project();
     await writeFile(
       path.join(cwd, "sedum.config.yaml"),
-      "provider: { apiKeyEnv: FOO }\nvision: { apiKeyEnv: SIGHT }\n",
+      "provider: { apiKeyEnv: FOO }\n",
     );
     const result = await runCli(["init"], "0.0.0", { cwd });
     expect(result.exitCode).toBe(0);
@@ -40,7 +40,6 @@ describe("sedum init", () => {
     expect(result.stdout).not.toContain("TYPESAFE_API_KEY");
     const template = await readFile(path.join(cwd, ".env.example"), "utf8");
     expect(template).toContain("FOO=");
-    expect(template).toContain("SIGHT=");
     expect(template).not.toContain("TYPESAFE_API_KEY");
   });
 

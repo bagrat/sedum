@@ -219,11 +219,7 @@ async function createStarterFiles(root: string, say: (value: string) => void) {
       line.replaceAll(defaultKeyName, keyName),
     ),
   };
-  const template =
-    ENV_EXAMPLE.replaceAll(defaultKeyName, keyName) +
-    (config.visionApiKeyEnv
-      ? `# OpenRouter key for vision.apiKeyEnv\n# ${config.visionApiKeyEnv}=\n`
-      : "");
+  const template = ENV_EXAMPLE.replaceAll(defaultKeyName, keyName);
   const createdExample = await createOrKeep(
     path.join(root, "tests/example.test.ts"),
     EXAMPLE,

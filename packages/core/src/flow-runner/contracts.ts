@@ -10,7 +10,7 @@ import type { RejectionRouter } from "../script-rejections.js";
 import type { VisionResolver } from "../vision.js";
 import type { BugDetector } from "../detector/detector.js";
 import type { FlowSource } from "../flow-types.js";
-import type { Judge, Resolver } from "../provider.js";
+import type { Judge, Resolver, TargetChecker } from "../provider.js";
 import type { ReportPrivacy } from "../report-privacy.js";
 import type { ResultFrame } from "../run-result.js";
 import type { RunRecorder, TestRecording } from "../run-recorder.js";
@@ -43,6 +43,15 @@ export interface FlowRunnerDependencies {
     Judge &
     Partial<GoalPlanner>;
   readonly visionResolver?: VisionResolver;
+  /**
+   * Viewport screenshots sent to the provider, never on sensitive pages:
+   * `targetChecker` refuses a resolved target when several elements fit the
+   * sentence, and `judge` adds the screenshot to verify and measure steps.
+   */
+  readonly screenshots?: {
+    readonly targetChecker?: TargetChecker;
+    readonly judge?: boolean;
+  };
   /** Flags pages that look broken; findings never fail a step. */
   readonly detector?: BugDetector;
   readonly classificationCache: ClassificationCache;

@@ -1,4 +1,4 @@
-import type { RunResult, VisionKeyProbe } from "@sedum-dev/core";
+import type { RunResult } from "@sedum-dev/core";
 import type { RunArtifactPaths } from "./output.js";
 import type { ParallelRequest } from "./run-pool.js";
 import type { RunFilters } from "./run-selection.js";
@@ -23,7 +23,8 @@ export interface RunCommandOptions {
   readonly environment?: string;
   readonly browser?: string;
   readonly vision?: boolean;
-  readonly visionModel?: string;
+  /** Overrides `screenshots` in sedum.config.yaml. */
+  readonly screenshots?: boolean;
   readonly urlOverride?: string;
   readonly outputDir?: string;
   readonly reporterDir?: string;
@@ -42,8 +43,6 @@ export interface RunCommandOptions {
   readonly providerConcurrency?: number;
   /** Injected for tests; defaults to `os.availableParallelism()`. */
   readonly availableParallelism?: number;
-  /** Injected for tests; defaults to OpenRouter's unbilled key endpoint. */
-  readonly probeVisionKey?: (apiKey: string) => Promise<VisionKeyProbe>;
   readonly replay: boolean;
   readonly evidence: boolean;
   readonly sensitiveOrigins: readonly string[];

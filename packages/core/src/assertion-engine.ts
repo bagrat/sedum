@@ -67,6 +67,11 @@ export interface AssertionOptions {
   readonly projectText?: (text: string) => string;
   /** Maximum time for the settled page read, before the provider call. */
   readonly observationTimeoutMs?: number;
+  /**
+   * Send the Judge a viewport screenshot taken at the same page version as
+   * the text, so claims about how the page looks can be judged.
+   */
+  readonly screenshot?: boolean;
 }
 
 export interface VerifyOptions extends AssertionOptions {
@@ -245,11 +250,48 @@ function validateDigest(result: DigestResult): void {
     throw new AssertionEngineError("incomplete_digest");
 }
 
+type FrameCapture = () => Promise<Uint8Array>;
+
+/** Screenshots for the Judge, when asked for and the page can take them. */
+function frameCapture(
+  page: BrowserPage,
+  options: AssertionOptions,
+): FrameCapture | undefined {
+  if (!options.screenshot || !page.captureFrame) return undefined;
+  return () => page.captureFrame!();
+}
+
+/** Ample for one viewport JPEG; a slower capture is skipped, not waited on. */
+const FRAME_TIMEOUT_MS = 2_000;
+
+/**
+ * Taken between the digest and the version check that must cover both. The
+ * screenshot is extra evidence: when it fails or is slow, judge from text.
+ */
+async function judgeFrame(
+  capture: FrameCapture | undefined,
+  deadline: number,
+  signal?: AbortSignal,
+): Promise<Uint8Array | undefined> {
+  if (!capture) return undefined;
+  const frameDeadline = Math.min(
+    deadline,
+    performance.now() + FRAME_TIMEOUT_MS,
+  );
+  try {
+    return await withinObservation(capture(), frameDeadline, signal);
+  } catch {
+    canceled(signal);
+    return undefined;
+  }
+}
+
 async function settledDigest(
   page: BrowserPage,
   timeoutMs: number,
   signal?: AbortSignal,
-): Promise<DigestResult> {
+  capture?: FrameCapture,
+): Promise<{ digest: DigestResult; frame: Uint8Array | undefined }> {
   const deadline = performance.now() + timeoutMs;
   try {
     const settled = await withinObservation(
@@ -282,6 +324,7 @@ async function settledDigest(
         );
         validateDigest(digest);
         if (!digest.text.trim()) continue;
+        const frame = await judgeFrame(capture, deadline, signal);
         const current = await withinObservation(
           pageVersion(page),
           deadline,
@@ -291,7 +334,7 @@ async function settledDigest(
           sameVersion(quiet.version, digest.version) &&
           sameVersion(current, digest.version)
         )
-          return digest;
+          return { digest, frame };
       } catch (error) {
         if (navigationRace(error)) continue;
         throw error;
@@ -308,25 +351,29 @@ function excerpt(text: string): string {
   return Array.from(text).slice(0, available).join("") + TRUNCATION_MARKER;
 }
 
+interface JudgeInputs {
+  readonly signal?: AbortSignal | undefined;
+  readonly projectText?: ((text: string) => string) | undefined;
+  readonly capture?: FrameCapture | undefined;
+}
+
 async function judgePage(
   page: BrowserPage,
   judge: Judge,
   claim: string,
   timeoutMs: number,
-  signal?: AbortSignal,
-  projectText?: (text: string) => string,
+  { signal, projectText, capture }: JudgeInputs,
 ) {
-  let digest = await settledDigest(page, timeoutMs, signal);
+  const settled = await settledDigest(page, timeoutMs, signal, capture);
+  const frame = settled.frame;
+  let digest = settled.digest;
   const projectedText = projectText ? projectText(digest.text) : digest.text;
   canceled(signal);
   let decision: Awaited<ReturnType<Judge["holds"]>> | undefined;
   try {
     decision = await judge.holds(
       projectText ? projectText(claim) : claim,
-      {
-        complete: true,
-        text: projectedText,
-      },
+      { complete: true, text: projectedText, screenshot: frame },
       signal ? { signal } : {},
     );
     if (signal?.aborted)
@@ -412,14 +459,11 @@ export async function verify(
     "contradictionCutoff",
   );
   canceled(options.signal);
-  const { decision, digest } = await judgePage(
-    page,
-    judge,
-    claim,
-    timeoutMs,
-    options.signal,
-    options.projectText,
-  );
+  const { decision, digest } = await judgePage(page, judge, claim, timeoutMs, {
+    signal: options.signal,
+    projectText: options.projectText,
+    capture: frameCapture(page, options),
+  });
   const policy = evaluateVerifyScores(decision.holds, decision.contradicted, {
     ...(options.minP === undefined ? {} : { minP: options.minP }),
     ...(options.band === undefined ? {} : { band: options.band }),
@@ -453,13 +497,10 @@ export async function measure(
   const started = performance.now();
   const timeoutMs = validateInput(claim, options);
   canceled(options.signal);
-  const { decision, digest } = await judgePage(
-    page,
-    judge,
-    claim,
-    timeoutMs,
-    options.signal,
-  );
+  const { decision, digest } = await judgePage(page, judge, claim, timeoutMs, {
+    signal: options.signal,
+    capture: frameCapture(page, options),
+  });
   return Object.defineProperty(
     {
       kind: "measure",

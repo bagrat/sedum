@@ -9,6 +9,7 @@ import type {
 import type { ProviderCall } from "../provider.js";
 import type { ResolvedStepTarget } from "../step-executor.js";
 import type { VisionFailure, VisionResolver } from "../vision.js";
+import type { TargetCheckOptions } from "./target-check.js";
 
 export type LocatorFailure =
   | "none"
@@ -36,7 +37,6 @@ export interface LocatorDiagnostic {
     readonly abstentionReason?: string;
     readonly elapsedMs: number;
     readonly failure?: VisionFailure | "unknown" | "stale_page";
-    readonly httpStatus?: number;
   };
   readonly candidateCount: number;
   readonly rounds: number;
@@ -102,6 +102,12 @@ export interface RepeatedMemberPolicy {
 
 export interface LocatorOptions {
   readonly visionResolver?: VisionResolver;
+  /**
+   * Before returning a model-resolved target, show it outlined in a
+   * screenshot and refuse it as ambiguous when several elements fit the
+   * sentence equally well. Cache hits are not checked again.
+   */
+  readonly targetCheck?: TargetCheckOptions;
   readonly operation: Operation;
   readonly sentence: string;
   /** Target-only sentence for cache keys; Resolver still receives sentence. */

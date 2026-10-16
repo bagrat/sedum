@@ -632,3 +632,234 @@ describe("TypeSafeAdapter wire and lifecycle", () => {
     );
   });
 });
+
+describe("TypeSafeAdapter screenshots", () => {
+  // Bytes chosen so a wrong encoding (hex, utf8, a data: prefix) differs.
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xfa]);
+  const digest = { complete: true, text: "Cart 1", screenshot: jpeg };
+
+  function recorder(replies: Response[]) {
+    // Request bodies are inspected loosely; their shape is what is asserted.
+    type Body = {
+      model: string;
+      state: Record<string, string>;
+      assets: Record<string, unknown>;
+      questions: Record<
+        string,
+        { instructions: string; criteria: Record<string, string> }
+      >;
+    };
+    const requests: { headers: Headers; body: Body }[] = [];
+    const adapter = new TypeSafeAdapter({
+      apiKey: "key",
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        requests.push({
+          headers: request.headers,
+          body: (await request.json()) as Body,
+        });
+        return replies.shift() ?? json({}, 500);
+      },
+    });
+    return { adapter, requests };
+  }
+
+  it("sends the Judge screenshot as an asset with the images header and image model", async () => {
+    const { adapter, requests } = recorder([
+      json({ ...judgeReply, model: "jev-1.14.0" }),
+      json(judgeReply),
+    ]);
+    const judged = await adapter.holds("The badge is red", digest);
+    await adapter.holds("The badge is red", { complete: true, text: "Cart 1" });
+
+    const [withImage, textOnly] = requests;
+    const ref = withImage!.body.state.screen!;
+    expect(withImage!.headers.get("typesafe-danger-zone-images")).toBe("true");
+    expect(withImage!.body).toMatchObject({
+      model: "jev-1.14.0",
+      state: { claim: "The badge is red", page: "Cart 1", screen: ref },
+      assets: {
+        [ref]: { type: "image", format: "jpg", data_base64: "/9j/4AAQ+g==" },
+      },
+    });
+    expect(Object.keys(withImage!.body.assets)).toEqual([ref]);
+    expect(judged.call.requestedModel).toBe("jev-1.14.0");
+    // Without a screenshot nothing about the text request changes.
+    expect(textOnly!.headers.get("typesafe-danger-zone-images")).toBeNull();
+    expect(textOnly!.body.model).toBe("jev-latest");
+    expect(textOnly!.body).not.toHaveProperty("assets");
+  });
+
+  it("judges from text and stops sending images after the service rejects one", async () => {
+    const { adapter, requests } = recorder([
+      json({ detail: { error_type: "api_usage_error" } }, 400),
+      json(judgeReply),
+      json(judgeReply),
+    ]);
+    const first = await adapter.holds("The badge is red", digest);
+    await adapter.holds("The badge is red", digest);
+
+    expect(first).toMatchObject({ holds: 0.9, contradicted: 0.8 });
+    expect(requests.map((request) => "assets" in request.body)).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    await expect(
+      adapter.checkTarget({
+        sentence: "click Add",
+        operation: "click",
+        image: jpeg,
+      }),
+    ).rejects.toMatchObject({ code: "invalid-input" });
+    expect(requests).toHaveLength(3);
+  });
+
+  it("reads the pick check's several probability and match score", async () => {
+    const { adapter, requests } = recorder([
+      json({
+        answers: {
+          match: { type: "noul", noul: 0.97 },
+          count: {
+            type: "choice",
+            choice: "several",
+            probabilities: { none: 0.05, one: 0.3, several: 0.65 },
+          },
+        },
+        model: "jev-1.14.0",
+        usage: { input_tokens: 3000, output_tokens: 0 },
+      }),
+    ]);
+    const decision = await adapter.checkTarget({
+      sentence: "click Add to cart",
+      operation: "fill",
+      image: jpeg,
+    });
+
+    expect(decision).toMatchObject({ match: 0.97, several: 0.65 });
+    expect(decision.call).toMatchObject({ requestedModel: "jev-1.14.0" });
+    const [request] = requests;
+    expect(request!.headers.get("typesafe-danger-zone-images")).toBe("true");
+    expect(request!.body.questions.count!.instructions).toContain(
+      'type into to do this browser-test step: "click Add to cart"',
+    );
+    expect(Object.keys(request!.body.questions.count!.criteria)).toEqual([
+      "none",
+      "one",
+      "several",
+    ]);
+  });
+
+  describe("vision fallback", () => {
+    const observation = {
+      instruction: "click Edit for Alan",
+      image: jpeg,
+      candidates: [
+        { id: "C1", name: "Edit", role: "button" },
+        { id: "C2", name: "Edit", role: "button" },
+      ],
+    };
+    const reply = (
+      target: Record<string, number>,
+      count: Record<string, number>,
+    ) =>
+      json({
+        answers: {
+          target: {
+            type: "choice",
+            choice: Object.entries(target).sort((a, b) => b[1] - a[1])[0]![0],
+            probabilities: target,
+          },
+          count: {
+            type: "choice",
+            choice: Object.entries(count).sort((a, b) => b[1] - a[1])[0]![0],
+            probabilities: count,
+          },
+        },
+        model: "jev-1.14.0",
+        usage: { input_tokens: 3400, output_tokens: 0 },
+      });
+    const target = (c2: number) => ({
+      C1: 0.98 - c2,
+      C2: c2,
+      ambiguous: 0.01,
+      no_match: 0.01,
+    });
+    const one = { none: 0.05, one: 0.9, several: 0.05 };
+
+    it("asks Jev to choose among the labelled boxes from the screenshot", async () => {
+      const { adapter, requests } = recorder([reply(target(0.95), one)]);
+      const answer = await adapter.chooseFromScreenshot(observation);
+
+      expect(answer.decision).toEqual({ kind: "candidate", id: "C2" });
+      expect(answer.call).toMatchObject({ requestedModel: "jev-1.14.0" });
+      const [request] = requests;
+      const ref = request!.body.state.screen!;
+      expect(request!.headers.get("typesafe-danger-zone-images")).toBe("true");
+      expect(request!.body).toMatchObject({
+        model: "jev-1.14.0",
+        assets: {
+          [ref]: { type: "image", format: "png", data_base64: "/9j/4AAQ+g==" },
+        },
+      });
+      expect(Object.keys(request!.body.questions.target!.criteria)).toEqual([
+        "C1",
+        "C2",
+        "ambiguous",
+        "no_match",
+      ]);
+      expect(request!.body.questions.target!.instructions).toContain(
+        '"click Edit for Alan"',
+      );
+    });
+
+    it("does not share the image rejection latch with the Judge and target check", async () => {
+      const rejected = () =>
+        json({ detail: { error_type: "api_usage_error" } }, 400);
+      const judgeFirst = recorder([
+        rejected(),
+        json(judgeReply),
+        reply(target(0.95), one),
+      ]);
+      await judgeFirst.adapter.holds("The badge is red", digest);
+      expect(
+        await judgeFirst.adapter.chooseFromScreenshot(observation),
+      ).toMatchObject({ decision: { kind: "candidate", id: "C2" } });
+      expect(judgeFirst.requests.map((r) => "assets" in r.body)).toEqual([
+        true,
+        false,
+        true,
+      ]);
+
+      const visionFirst = recorder([rejected(), json(judgeReply)]);
+      await expect(
+        visionFirst.adapter.chooseFromScreenshot(observation),
+      ).rejects.toMatchObject({ code: "invalid-input" });
+      await visionFirst.adapter.holds("The badge is red", digest);
+      expect(visionFirst.requests.map((r) => "assets" in r.body)).toEqual([
+        true,
+        true,
+      ]);
+    });
+
+    it("abstains unless Jev is sure of the box and that something fits", async () => {
+      const { adapter } = recorder([
+        reply(target(0.85), one),
+        reply(target(0.95), { none: 0.35, one: 0.6, several: 0.05 }),
+        reply(target(0.95), { none: 0.05, one: 0.4, several: 0.55 }),
+        reply({ C1: 0.1, C2: 0.1, ambiguous: 0.7, no_match: 0.1 }, one),
+      ]);
+      const reasons = [];
+      for (let index = 0; index < 4; index++)
+        reasons.push(
+          (await adapter.chooseFromScreenshot(observation)).decision,
+        );
+      expect(reasons).toEqual([
+        { kind: "abstain", reason: "uncertain" },
+        { kind: "abstain", reason: "no_match" },
+        { kind: "abstain", reason: "ambiguous" },
+        { kind: "abstain", reason: "ambiguous" },
+      ]);
+    });
+  });
+});

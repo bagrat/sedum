@@ -368,8 +368,6 @@ describe("CLI command framework", () => {
         "--no-locator-cache",
         "--locator-cache-ci",
         "--vision",
-        "--vision-model",
-        "openrouter/vision-test",
         "--sensitive-origin=https://example.com/private",
         "--sensitive-origin",
         "https://two.test/path",
@@ -385,7 +383,6 @@ describe("CLI command framework", () => {
         locatorCacheDisabled: true,
         locatorCacheCi: true,
         vision: true,
-        visionModel: "openrouter/vision-test",
         sensitiveOrigins: ["https://example.com", "https://two.test"],
       }),
     );

@@ -249,7 +249,11 @@ export async function runCli(
     .option("--browser <kind>", "chrome or chromium")
     .option("--vision", "enable vision fallback for ambiguous clicks")
     .option("--no-vision", "disable vision fallback")
-    .option("--vision-model <model>", "override the OpenRouter vision model")
+    .option(
+      "--screenshots",
+      "send screenshots to TypeSafe to check targets and judge claims (default for the TypeSafe API)",
+    )
+    .option("--no-screenshots", "send page text only, never screenshots")
     .option(
       "--url-override <url>",
       "replace entry URL origin for preview deployments",
@@ -347,7 +351,7 @@ export async function runCli(
           env?: string;
           browser?: string;
           vision?: boolean;
-          visionModel?: string;
+          screenshots?: boolean;
           urlOverride?: string;
           outputDir?: string;
           reporterDir?: string;
@@ -527,8 +531,8 @@ export async function runCli(
           ...(options.env ? { environment: options.env } : {}),
           ...(options.browser ? { browser: options.browser } : {}),
           ...(options.vision !== undefined ? { vision: options.vision } : {}),
-          ...(options.visionModel !== undefined
-            ? { visionModel: options.visionModel }
+          ...(options.screenshots !== undefined
+            ? { screenshots: options.screenshots }
             : {}),
           ...(options.urlOverride ? { urlOverride: options.urlOverride } : {}),
           ...(options.outputDir ? { outputDir: options.outputDir } : {}),
@@ -744,33 +748,25 @@ export async function runCli(
     .description("check whether this environment can run Sedum")
     .option("--env <name>", "select a named environment")
     .option("--json", "print versioned JSON checks on stdout", false)
-    .option(
-      "--vision",
-      "also check the vision fallback's OPEN_ROUTER_API_KEY (automatic when vision.enabled is true)",
-      false,
-    )
     .addHelpText(
       "after",
       "\nThe authenticated API check makes one small, potentially billable request.\n\nExit codes:\n  0 all checks passed\n  3 one or more prerequisites failed\n",
     )
-    .action(
-      async (options: { json: boolean; vision: boolean; env?: string }) => {
-        const { executeDoctorCommand, renderDoctorText } =
-          await import("./doctor-command.js");
-        const result = await executeDoctorCommand(cwd, runtime.doctorProbes, {
-          vision: options.vision,
-          ...(options.env ? { environment: options.env } : {}),
-        });
-        writeOut(
-          options.json
-            ? `${JSON.stringify(result)}\n`
-            : renderDoctorText(result),
-        );
-        exitCode = result.checks.every((check) => check.status === "pass")
-          ? 0
-          : 3;
-      },
-    );
+    .action(async (options: { json: boolean; env?: string }) => {
+      const { executeDoctorCommand, renderDoctorText } =
+        await import("./doctor-command.js");
+      const result = await executeDoctorCommand(
+        cwd,
+        runtime.doctorProbes,
+        options.env ? { environment: options.env } : {},
+      );
+      writeOut(
+        options.json ? `${JSON.stringify(result)}\n` : renderDoctorText(result),
+      );
+      exitCode = result.checks.every((check) => check.status === "pass")
+        ? 0
+        : 3;
+    });
 
   program
     .command("validate")

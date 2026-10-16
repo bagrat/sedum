@@ -11,6 +11,15 @@ environment are replaced by placeholders. Other visible page text is sent as
 it is. Use `--sensitive-origin <url>` to keep a page's details and screenshots
 out of saved results.
 
+**Screenshots (on by default for the direct TypeSafe API).** Sedum also sends
+viewport screenshots: one with the chosen element outlined after each
+model-resolved click, type, or read, and one with each `verify` and `measure`
+step. Screenshots are **not redacted**: placeholders replace secrets in text,
+not in pixels, so a typed password field shows its dots and anything else on
+screen is sent as it looks. Pages matched by `--sensitive-origin` never send
+screenshots. Turn them off with `screenshots: false` in `sedum.config.yaml`
+or `sedum run --no-screenshots`. See [Screenshots](#screenshots) below.
+
 **Exception: experimental `run --affected`.** Test selection sends the retained
 committed `merge-base(base, pinned HEAD)..pinned HEAD` diff and complete candidate
 test/module sources. Dirty tracked state is refused even when ignored.
@@ -56,6 +65,37 @@ service: the configured key is sent to that URL. The service must implement
 the TypeSafe SDK's `/v1/systemone` wire contract; an OpenAI-compatible chat API
 is not sufficient. The configured model is included in provider receipts and
 is used to separate classification cache entries.
+
+## Screenshots
+
+Screenshots use TypeSafe's images preview, which TypeSafe calls
+"dreamer-ready": the request format can change between releases. Requests
+with a screenshot carry the `TypeSafe-Danger-Zone-Images: true` header and use
+`jev-1.14.0`, which reads text and images together best; text-only requests
+keep `jev-latest`. A screenshot adds about 1,400–3,500 input tokens, billed at
+the normal input price, so a step with one costs about $0.0001 more.
+
+- **Target check.** After the text model picks an element, Sedum outlines it
+  in a screenshot and asks whether several elements fit the step equally
+  well. At a probability of 0.5 or more the step stops as ambiguous instead
+  of clicking a guess; name the element more precisely. Locator cache hits
+  are not checked again. On the locator benchmark's held-out real sites this
+  cut wrong actions from 12% to 5% of steps, for about one point of success.
+- **Judge.** `verify` and `measure` steps send the page text and a screenshot
+  of the browser window, so claims about how the page looks (colors, icons,
+  disabled controls, images, overlap) can be judged. The text still covers
+  content scrolled out of view.
+- **Vision fallback (opt-in, `vision.enabled` or `--vision`).** When the text
+  model cannot single out a click target, Sedum boxes and labels every
+  visible candidate in a screenshot and asks Jev which label the step means,
+  or to abstain. One request per step, about 3,400 input tokens (about
+  $0.00015). See [Vision fallback](configuration.md#vision-fallback-opt-in).
+
+Screenshots fail open: if the service rejects an image request, Sedum judges
+from text and stops sending images for the rest of the run, and a failed
+target check keeps the text model's pick. Gateways and other compatible
+services get no screenshots unless `screenshots: true` is set explicitly;
+Clef never gets them.
 
 ## Vercel AI Gateway
 

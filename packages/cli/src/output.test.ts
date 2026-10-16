@@ -83,7 +83,7 @@ async function configureComprehensiveRun(recorder: RunRecorder): Promise<void> {
     parallel: { requested: 3, lanes: 2 },
     shard: { index: 2, count: 3, globalSelectedTests: 8 },
     providerConcurrency: 4,
-    vision: { model: "vision-model", key: "rejected" },
+    vision: { model: "vision-model" },
   });
   await recorder.addDiscoveryProblems([
     {
@@ -262,7 +262,6 @@ describe("terminal output characterization", () => {
       lanes 2, provider concurrency 4, shard 2/3 of 8 selected
       vision vision-model: attempted on 2 step(s); 1 selected, 0 abstained, 1 failed
       vision not attempted on 1 failed click step(s); see step errors for details
-      vision warning: OpenRouter rejected OPEN_ROUTER_API_KEY, so vision fallback cannot work. Check it with \`sedum doctor --vision\`.
       provider rate limited 2 call(s), waited 3.5s in shared cooldowns
       cache 1 locator cache write conflict(s); the model result was used
       checkout.test.yaml · attempt 1 · step 1: Vision fallback: selected · actual-model · 2100 ms · trigger: provider [31mmetadata
@@ -305,7 +304,6 @@ describe("terminal output characterization", () => {
       lanes 2, provider concurrency 4, shard 2/3 of 8 selected
       vision vision-model: attempted on 2 step(s); 1 selected, 0 abstained, 1 failed
       vision not attempted on 1 failed click step(s); see step errors for details
-      vision warning: OpenRouter rejected OPEN_ROUTER_API_KEY, so vision fallback cannot work. Check it with \`sedum doctor --vision\`.
       provider rate limited 2 call(s), waited 3.5s in shared cooldowns
       cache 1 locator cache write conflict(s); the model result was used
       checkout.test.yaml · attempt 1 · step 1: Vision fallback: selected · actual-model · 2100 ms · trigger: provider [31mmetadata

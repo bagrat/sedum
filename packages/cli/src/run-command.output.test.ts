@@ -963,15 +963,14 @@ describe("run output failure contract", () => {
       await inTemporaryRoot();
       await writeFile(
         path.join(root!, "sedum.config.yaml"),
-        "provider: { apiKeyEnv: MODEL_KEY }\nvision: { apiKeyEnv: VISION_KEY }\nenvironments:\n  other:\n    provider: { apiKeyEnv: OTHER_KEY }\n",
+        "provider: { apiKeyEnv: MODEL_KEY }\nenvironments:\n  other:\n    provider: { apiKeyEnv: OTHER_KEY }\n",
       );
       await writeFile(
         path.join(root!, ".env"),
-        "MODEL_KEY=model-sentinel\nVISION_KEY=vision-sentinel\nOTHER_KEY=other-sentinel\n",
+        "MODEL_KEY=model-sentinel\nOTHER_KEY=other-sentinel\n",
       );
       vi.stubEnv("MODEL_KEY", "process-provider-sentinel");
-      const message =
-        "process-provider-sentinel model-sentinel vision-sentinel other-sentinel";
+      const message = "process-provider-sentinel model-sentinel other-sentinel";
       const throwing = `throw new Error(${JSON.stringify(message)});`;
       await writeFile(
         path.join(root!, "private.test.ts"),

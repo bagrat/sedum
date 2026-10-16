@@ -11,6 +11,11 @@ import { ItemVerifier } from "./locator/item-verifier.js";
 import { LiveTargetValidator } from "./locator/live-validator.js";
 import { VisionFallback } from "./locator/vision-fallback.js";
 import { eliminateCandidates } from "./locator/elimination.js";
+import { checkResolvedTarget } from "./locator/target-check.js";
+export {
+  DEFAULT_MAX_SEVERAL,
+  type TargetCheckOptions,
+} from "./locator/target-check.js";
 import {
   LocatorLifecycle,
   prepareLocator,
@@ -174,7 +179,7 @@ export async function resolveTarget(
       roundCompleted: () => rounds++,
     });
     if (eliminated.stale) return unresolved("stale");
-    return await new RuntimeSelection({
+    const result = await new RuntimeSelection({
       page,
       options,
       source,
@@ -188,6 +193,20 @@ export async function resolveTarget(
       unresolved,
       refresh,
     }).resolve();
+    if (result.kind !== "resolved" || !options.targetCheck) return result;
+    const verdict = await checkResolvedTarget({
+      page,
+      target: result.target,
+      sentence: options.sentence,
+      operation: options.operation,
+      options: options.targetCheck,
+      calls,
+      signal: controller.signal,
+    });
+    ensureActive();
+    if (verdict === "accepted") return { ...result, calls };
+    if (verdict === "ambiguous") selection.gate = "target_check:ambiguous";
+    return unresolved(verdict);
   } catch (error) {
     if (
       options.cache &&
