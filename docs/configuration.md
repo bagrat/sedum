@@ -87,7 +87,7 @@ environments:
 
 `sedum run --env staging` and `sedum doctor --env staging` use the named
 environment's values; environments without overrides inherit the top-level
-names. `sedum explore` has no `--env` and uses the top-level name. Set only variable **names** in YAML, never key values. Names must match
+names. `sedum explore` has no `--env` and uses the name `sedum run` uses without one. Set only variable **names** in YAML, never key values. Names must match
 `[A-Za-z_][A-Za-z0-9_]*`. The process value wins over the project-root `.env`
 value; blank values are treated as missing. An explicit name disables fallback
 to the default names and aliases. Custom credential variables are not exposed

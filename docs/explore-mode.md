@@ -297,7 +297,8 @@ after its start time and seed:
   project-root `.env`, as `sedum run` reads them. When the project uses
   TypeSafe and sets `provider.apiKeyEnv` in `sedum.config.yaml`, the key is
   read from that variable instead, without falling back to
-  `TYPESAFE_API_KEY`; named environments are not applied. An invalid
+  `TYPESAFE_API_KEY`. Explore has no `--env`, so it uses the name `sedum run`
+  uses without one: the default `environment:`'s override, if any. An invalid
   `sedum.config.yaml` stops the command, as it does `sedum run`.
 
 ## Evaluation on the fixture shop

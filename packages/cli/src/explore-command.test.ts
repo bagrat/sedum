@@ -143,4 +143,20 @@ describe("explore provider settings", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("uses the default environment's key name, as sedum run does without --env", async () => {
+    const root = await project({
+      "sedum.config.yaml":
+        "environment: staging\nprovider:\n  apiKeyEnv: LOCAL_KEY\nenvironments:\n  staging:\n    provider:\n      apiKeyEnv: STAGING_KEY\n",
+      ".env": "LOCAL_KEY=local-key\nSTAGING_KEY=staging-key\n",
+    });
+    try {
+      expect(await exploreProvider(root, {})).toEqual({
+        provider: { apiKey: "staging-key" },
+        keyName: "STAGING_KEY",
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
