@@ -1,5 +1,13 @@
 # @sedum-dev/provider-clef
 
+## 0.1.0-alpha.17
+
+### Patch Changes
+
+- Updated dependencies [8e0aeef]
+- Updated dependencies [6da2a50]
+  - @sedum-dev/core@0.1.0-alpha.17
+
 ## 0.1.0-alpha.16
 
 ### Patch Changes

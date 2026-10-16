@@ -1,5 +1,14 @@
 # @sedum-dev/reporters
 
+## 0.1.0-alpha.17
+
+### Patch Changes
+
+- 8e0aeef: The opt-in vision fallback (`vision.enabled`, `sedum run --vision`) now asks Jev (`jev-1.14.0`, TypeSafe images preview) with the run's TypeSafe key, instead of Gemini over OpenRouter. It needs screenshots, so it runs on the direct TypeSafe API; a run with vision on and screenshots off stops with `vision_needs_screenshots`. Removed: `OpenRouterVisionResolver`, `probeOpenRouterKey`, `VisionRequestError` and `DEFAULT_VISION_MODEL` from `@sedum-dev/core`; the `--vision-model` run flag; the `vision.model`, `vision.timeoutMs` and `vision.apiKeyEnv` config keys (including `environments.<name>.vision`), which now fail with a fix; `OPEN_ROUTER_API_KEY` for vision; and `sedum doctor --vision` with its `vision_key` and `vision_auth` checks, replaced by a `vision` check. `VisionResolver.choose` is renamed `chooseFromScreenshot`, which `TypeSafeAdapter` implements. A rejected key or exhausted rate limit during a vision request now stops the run.
+- Updated dependencies [8e0aeef]
+- Updated dependencies [6da2a50]
+  - @sedum-dev/core@0.1.0-alpha.17
+
 ## 0.1.0-alpha.16
 
 ### Patch Changes
