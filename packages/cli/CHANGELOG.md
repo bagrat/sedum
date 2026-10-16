@@ -1,5 +1,16 @@
 # sedum-cli
 
+## 0.1.0-alpha.18
+
+### Patch Changes
+
+- 0af8637: Read the TypeSafe key from `provider.apiKeyEnv` in `sedum explore`, as `sedum run` and `sedum doctor` do. Before, a project that kept its key in a custom variable such as `TYPESAFE_LOCAL_E2E_API_KEY` failed with "Set TYPESAFE_API_KEY to use the TypeSafe provider." The message now names the configured variable, and a configured name is not backed by `TYPESAFE_API_KEY`. An invalid `sedum.config.yaml` now stops `sedum explore` with its diagnostic.
+- Updated dependencies [d793836]
+  - @sedum-dev/core@0.1.0-alpha.18
+  - @sedum-dev/provider-clef@0.1.0-alpha.18
+  - @sedum-dev/provider-typesafe@0.1.0-alpha.18
+  - @sedum-dev/reporters@0.1.0-alpha.18
+
 ## 0.1.0-alpha.17
 
 ### Minor Changes
