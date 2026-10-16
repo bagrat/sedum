@@ -194,6 +194,9 @@ export async function resolveTarget(
       refresh,
     }).resolve();
     if (result.kind !== "resolved" || !options.targetCheck) return result;
+    // A rank names one member of identical siblings; the check would count
+    // the siblings the sentence already told apart.
+    if (selection.ranked) return result;
     const verdict = await checkResolvedTarget({
       page,
       target: result.target,

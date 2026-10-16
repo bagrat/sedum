@@ -39,6 +39,8 @@ export interface SelectionState {
   top: LocatorOptionDiagnostic[];
   confidence: number | null;
   gate?: string;
+  /** The target was picked in code by an ordinal or price rank. */
+  ranked?: boolean;
 }
 
 export interface RuntimeSelectionContext {
@@ -83,7 +85,8 @@ export class RuntimeSelection {
       : null;
     if (fallback) {
       this.gate("resolved_in_code_after_none");
-      return this.accept(fallback);
+      this.context.state.ranked = fallback.ranked;
+      return this.accept(fallback.target);
     }
     if (!options.visionResolver || options.operation !== "click")
       return this.unresolved("none");
@@ -122,14 +125,15 @@ export class RuntimeSelection {
       (codeFallback
         ? resolveInCode(options.sentence, anchor, this.candidates, true)
         : null);
+    const coded = inCode(selected);
     const section =
-      options.sectionMatch !== false && !inCode(selected)
+      options.sectionMatch !== false && !coded
         ? resolveBySection(options.sentence, selected, this.candidates)
         : null;
-    const target = section ?? inCode(selected);
-    return target
-      ? { target, gate: section ? "resolved_by_section" : "resolved_in_code" }
-      : null;
+    if (section) return { target: section, gate: "resolved_by_section" };
+    if (!coded) return null;
+    this.context.state.ranked = coded.ranked;
+    return { target: coded.target, gate: "resolved_in_code" };
   }
 
   private async verifiedItem(selected: Candidate): Promise<Candidate | null> {

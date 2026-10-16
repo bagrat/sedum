@@ -395,12 +395,21 @@ function rankedSelection(
   return selectByPrice(group, items, ranked.lowest);
 }
 
+/**
+ * A same-name member chosen by code. `ranked` marks a pick by ordinal or
+ * price rank: the sentence names one member of the group, in document order.
+ */
+export interface CodedPick {
+  readonly target: Candidate;
+  readonly ranked: boolean;
+}
+
 export function resolveInCode(
   sentence: string,
   pick: Candidate,
   candidates: readonly Candidate[],
   loose = false,
-): Candidate | null {
+): CodedPick | null {
   const context: ResolutionContext = {
     sentence: new LexicalText(sentence),
     pick,
@@ -431,8 +440,10 @@ export function resolveInCode(
   )
     return null;
   const selected = rankedSelection(ranked, group, items);
-  if (selected !== undefined) return selected;
-  return matchItemReference({ ...context, group, items });
+  if (selected !== undefined)
+    return selected && { target: selected, ranked: true };
+  const referenced = matchItemReference({ ...context, group, items });
+  return referenced && { target: referenced, ranked: false };
 }
 
 export function statedGroupPick(
@@ -497,7 +508,7 @@ export function nameStated(sentence: string, candidate: Candidate): boolean {
 export function codeAfterNone(
   sentence: string,
   candidates: readonly Candidate[],
-): Candidate | null {
+): CodedPick | null {
   const pick = statedGroupPick(sentence, candidates);
   return pick ? resolveInCode(sentence, pick, candidates, true) : null;
 }

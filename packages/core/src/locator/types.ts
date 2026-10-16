@@ -105,7 +105,8 @@ export interface LocatorOptions {
   /**
    * Before returning a model-resolved target, show it outlined in a
    * screenshot and refuse it as ambiguous when several elements fit the
-   * sentence equally well. Cache hits are not checked again.
+   * sentence equally well. Cache hits and picks that code made by an
+   * ordinal or price rank ("the first", "the cheapest") are not checked.
    */
   readonly targetCheck?: TargetCheckOptions;
   readonly operation: Operation;

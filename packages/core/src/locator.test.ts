@@ -2098,10 +2098,14 @@ describe("vision fallback boundaries", () => {
   });
 
   describe("screenshot target check", () => {
-    async function checkedPage() {
-      const target = candidate(1, { name: "Add to cart" });
-      const other = candidate(2, { name: "Checkout" });
-      const recorded = recordedPage([target, other]);
+    async function checkedPage(
+      items = [
+        candidate(1, { name: "Add to cart" }),
+        candidate(2, { name: "Checkout" }),
+      ],
+    ) {
+      const target = items[0]!;
+      const recorded = recordedPage(items);
       const { default: sharp } = await import("sharp");
       const frame = await sharp({
         create: { width: 200, height: 100, channels: 3, background: "#fff" },
@@ -2157,6 +2161,38 @@ describe("vision fallback boundaries", () => {
       // The target is outlined on the frame, not sent as captured.
       expect(Buffer.compare(Buffer.from(input.image), frame)).not.toBe(0);
     });
+
+    it.each([
+      ["click the first Start fact find button", "resolved"],
+      ["click the Start fact find button", "unresolved"],
+    ])(
+      "with duplicated buttons, %s is %s after a several verdict",
+      async (sentence, kind) => {
+        const { page } = await checkedPage([
+          candidate(1, { name: "Start fact find" }),
+          candidate(2, { name: "Start fact find" }),
+        ]);
+        // The model leans to the second button; only the ordinal names the first.
+        const model = resolver((options) => answer(options, "r2"));
+        const checkTarget = vi.fn(async () => ({
+          match: 0.9,
+          several: 0.9,
+          call: checkCall,
+        }));
+        const result = await resolveTarget(page, model, {
+          operation: "click",
+          sentence,
+          targetCheck: { checker: { checkTarget } },
+        });
+
+        expect(result.kind).toBe(kind);
+        if (result.kind === "resolved") {
+          // An ordinal decides in document order; the check cannot overrule it.
+          expect(result.target.driverTarget().ref).toBe("fresh-r1");
+          expect(checkTarget).not.toHaveBeenCalled();
+        } else expect(checkTarget).toHaveBeenCalledOnce();
+      },
+    );
 
     it("refuses as ambiguous when the target was validated after page churn", async () => {
       const target = candidate(1, {
