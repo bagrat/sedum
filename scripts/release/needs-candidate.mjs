@@ -1,5 +1,6 @@
 import { readFile, appendFile } from "node:fs/promises";
 import { packages, assert } from "./packages.mjs";
+import { pendingChangesets } from "./pending-changesets.mjs";
 
 const manifests = await Promise.all(
   packages.map(async ({ directory }) =>
@@ -37,10 +38,21 @@ if (version !== "0.0.0") {
   );
   needed = statuses[0] === 404;
 }
+// A candidate is published under its version's changelog, so changes still
+// waiting for the version PR must not ship inside it.
+const pending = needed ? await pendingChangesets() : [];
 if (process.env.GITHUB_OUTPUT)
-  await appendFile(process.env.GITHUB_OUTPUT, `release=${needed}\n`);
-console.log(
-  needed
-    ? `Build candidate for unpublished ${version}`
-    : `No candidate needed at ${version}`,
-);
+  await appendFile(
+    process.env.GITHUB_OUTPUT,
+    `release=${needed && pending.length === 0}\n`,
+  );
+if (pending.length > 0)
+  console.log(
+    `No candidate for ${version}: merge the version PR first. Not yet versioned: ${pending.join(", ")}`,
+  );
+else
+  console.log(
+    needed
+      ? `Build candidate for unpublished ${version}`
+      : `No candidate needed at ${version}`,
+  );
