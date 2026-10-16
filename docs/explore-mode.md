@@ -294,8 +294,11 @@ after its start time and seed:
   with at most 60 click targets.
 - The provider is TypeSafe only, configured from `TYPESAFE_API_KEY` (and
   `TYPESAFE_BASE_URL`, `TYPESAFE_DEFAULT_MODEL`) in your shell or the
-  project-root `.env`, as `sedum run` reads them. The command does not read
-  `sedum.config.yaml`.
+  project-root `.env`, as `sedum run` reads them. When the project uses
+  TypeSafe and sets `provider.apiKeyEnv` in `sedum.config.yaml`, the key is
+  read from that variable instead, without falling back to
+  `TYPESAFE_API_KEY`; named environments are not applied. An invalid
+  `sedum.config.yaml` stops the command, as it does `sedum run`.
 
 ## Evaluation on the fixture shop
 

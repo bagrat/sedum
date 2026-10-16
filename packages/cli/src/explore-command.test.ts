@@ -97,26 +97,48 @@ describe("explore arguments", () => {
 });
 
 describe("explore provider settings", () => {
-  it("reads TYPESAFE_* from the project-root .env, under the shell's values", async () => {
+  async function project(files: Record<string, string>): Promise<string> {
     const root = await mkdtemp(path.join(tmpdir(), "sedum-explore-env-"));
+    for (const [name, contents] of Object.entries(files))
+      await writeFile(path.join(root, name), contents);
+    return root;
+  }
+
+  it("reads TYPESAFE_* from the project-root .env, under the shell's values", async () => {
+    const root = await project({
+      "sedum.config.yaml": "browser: chromium\n",
+      ".env": "TYPESAFE_API_KEY=file-key\nTYPESAFE_DEFAULT_MODEL=file-model\n",
+    });
     try {
-      await writeFile(
-        path.join(root, "sedum.config.yaml"),
-        "browser: chromium\n",
-      );
-      await writeFile(
-        path.join(root, ".env"),
-        "TYPESAFE_API_KEY=file-key\nTYPESAFE_DEFAULT_MODEL=file-model\n",
-      );
       const nested = path.join(root, "pages");
       await mkdir(nested);
       expect(await exploreProvider(nested, {})).toEqual({
-        apiKey: "file-key",
-        model: "file-model",
+        provider: { apiKey: "file-key", model: "file-model" },
+        keyName: "TYPESAFE_API_KEY",
       });
       expect(
-        await exploreProvider(nested, { TYPESAFE_API_KEY: "shell-key" }),
-      ).toEqual({ apiKey: "shell-key", model: "file-model" });
+        (await exploreProvider(nested, { TYPESAFE_API_KEY: "shell-key" }))
+          .provider.apiKey,
+      ).toBe("shell-key");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads the key from provider.apiKeyEnv, without falling back to TYPESAFE_API_KEY", async () => {
+    const root = await project({
+      "sedum.config.yaml": "provider:\n  apiKeyEnv: E2E_TYPESAFE_KEY\n",
+      ".env": "E2E_TYPESAFE_KEY=custom-key\nTYPESAFE_API_KEY=default-key\n",
+    });
+    try {
+      expect(await exploreProvider(root, {})).toEqual({
+        provider: { apiKey: "custom-key" },
+        keyName: "E2E_TYPESAFE_KEY",
+      });
+      await writeFile(path.join(root, ".env"), "");
+      expect(
+        await exploreProvider(root, { TYPESAFE_API_KEY: "default-key" }),
+      ).toEqual({ provider: { apiKey: "" }, keyName: "E2E_TYPESAFE_KEY" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

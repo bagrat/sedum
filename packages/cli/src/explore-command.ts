@@ -3,7 +3,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { InvalidArgumentError } from "commander";
 import type { ExploreDetect, ExploreSafeMode } from "./cli-arguments.js";
-import { readProjectEnvironment } from "./config.js";
+import {
+  loadProjectConfig,
+  ProjectConfigError,
+  readProjectEnvironment,
+} from "./config.js";
+import { configDiagnostic } from "./diagnostics.js";
 import { FrameRecorder } from "./explore-frames.js";
 import { writeExploreReports } from "./explore-output.js";
 import type {
@@ -215,24 +220,42 @@ export interface ExploreProvider {
   readonly model?: string;
 }
 
+/** The walk's TypeSafe settings, and the variable its key is read from. */
+export interface ExploreCredentials {
+  readonly provider: ExploreProvider;
+  readonly keyName: string;
+}
+
 /**
- * TYPESAFE_API_KEY, TYPESAFE_BASE_URL and TYPESAFE_DEFAULT_MODEL as `sedum run`
+ * The TypeSafe key, TYPESAFE_BASE_URL and TYPESAFE_DEFAULT_MODEL as `sedum run`
  * reads them: the process environment first, then the project-root `.env`.
+ * The key comes from `provider.apiKeyEnv` in sedum.config.yaml when the
+ * project uses TypeSafe, else from TYPESAFE_API_KEY.
  */
 export async function exploreProvider(
   cwd: string,
   environment: Readonly<Record<string, string | undefined>> = process.env,
-): Promise<ExploreProvider> {
-  const file = await readProjectEnvironment(cwd);
+): Promise<ExploreCredentials> {
+  const config = await loadProjectConfig(cwd, environment);
+  const file = await readProjectEnvironment(config.projectRoot);
   const value = (name: string): string | undefined =>
     environment[name]?.trim() || file[name]?.trim() || undefined;
-  const apiKey = value("TYPESAFE_API_KEY");
+  const keyName =
+    config.providerName === "typesafe"
+      ? (config.apiKeyEnv ?? "TYPESAFE_API_KEY")
+      : "TYPESAFE_API_KEY";
+  // Always set, even when empty: the adapter would otherwise fall back to
+  // TYPESAFE_API_KEY, which a configured `provider.apiKeyEnv` replaces.
+  const apiKey = value(keyName) ?? "";
   const baseURL = value("TYPESAFE_BASE_URL");
   const model = value("TYPESAFE_DEFAULT_MODEL");
   return {
-    ...(apiKey ? { apiKey } : {}),
-    ...(baseURL ? { baseURL } : {}),
-    ...(model ? { model } : {}),
+    provider: {
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
+      ...(model ? { model } : {}),
+    },
+    keyName,
   };
 }
 
@@ -609,6 +632,7 @@ async function run(
   url: string,
   flags: ExploreFlags,
   io: ExploreIo,
+  provider: ExploreProvider,
 ): Promise<number> {
   return executeExploreCommand({
     url,
@@ -627,7 +651,7 @@ async function run(
     detect: flags.detect,
     detectAllow: flags.detectAllow,
     ...(flags.cookies ? { cookies: path.resolve(io.cwd, flags.cookies) } : {}),
-    provider: await exploreProvider(io.cwd),
+    provider,
     ...(io.signal ? { signal: io.signal } : {}),
     write: io.write,
   });
@@ -652,22 +676,47 @@ export async function exploreAction(
   flags: ExploreFlags,
   io: ExploreIo,
 ): Promise<number> {
-  const { ProviderError } = await import("@sedum-dev/core");
-  try {
-    if (flags.rerun)
-      return await executeRerunCommand({
-        trace: path.resolve(io.cwd, flags.rerun),
-        headed: flags.headed,
-        write: io.write,
-      });
-    const problem = usageProblem({ url, flags });
-    if (!problem) return await run(url!, flags, io);
+  if (flags.rerun)
+    return executeRerunCommand({
+      trace: path.resolve(io.cwd, flags.rerun),
+      headed: flags.headed,
+      write: io.write,
+    });
+  const problem = usageProblem({ url, flags });
+  if (problem) {
     io.writeErr(problem);
+    return 3;
+  }
+  return explore(url!, flags, io);
+}
+
+/** Explore from a URL with the project's TypeSafe credentials. */
+async function explore(
+  url: string,
+  flags: ExploreFlags,
+  io: ExploreIo,
+): Promise<number> {
+  const { ProviderError } = await import("@sedum-dev/core");
+  let credentials: ExploreCredentials;
+  try {
+    credentials = await exploreProvider(io.cwd);
+  } catch (error) {
+    if (!(error instanceof ProjectConfigError)) throw error;
+    const diagnostic = configDiagnostic(error);
+    io.writeErr(`${diagnostic.message}\nFix: ${diagnostic.fix}\n`);
+    return 3;
+  }
+  const { provider, keyName } = credentials;
+  try {
+    return await run(url, flags, io, provider);
   } catch (error) {
     if (!(error instanceof ProviderError && error.code === "configuration"))
       throw error;
+    const message = provider.apiKey
+      ? error.message
+      : `Set ${keyName} to use the TypeSafe provider.`;
     io.writeErr(
-      `${error.message}\nFix: set TYPESAFE_API_KEY in the project-root .env or your shell, or use --mode random or --mode heuristic without --shrink.\n`,
+      `${message}\nFix: set ${keyName} in the project-root .env or your shell, or use --mode random or --mode heuristic without --shrink.\n`,
     );
   }
   return 3;
