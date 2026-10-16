@@ -746,15 +746,20 @@ export async function runCli(
   program
     .command("doctor")
     .description("check whether this environment can run Sedum")
+    .option("--env <name>", "select a named environment")
     .option("--json", "print versioned JSON checks on stdout", false)
     .addHelpText(
       "after",
       "\nThe authenticated API check makes one small, potentially billable request.\n\nExit codes:\n  0 all checks passed\n  3 one or more prerequisites failed\n",
     )
-    .action(async (options: { json: boolean }) => {
+    .action(async (options: { json: boolean; env?: string }) => {
       const { executeDoctorCommand, renderDoctorText } =
         await import("./doctor-command.js");
-      const result = await executeDoctorCommand(cwd, runtime.doctorProbes);
+      const result = await executeDoctorCommand(
+        cwd,
+        runtime.doctorProbes,
+        options.env ? { environment: options.env } : {},
+      );
       writeOut(
         options.json ? `${JSON.stringify(result)}\n` : renderDoctorText(result),
       );

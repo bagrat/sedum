@@ -56,6 +56,9 @@ export interface ResolvedProjectConfig {
   readonly variables: Readonly<Record<string, string | undefined>>;
   readonly providerName: "typesafe" | "clef" | "openrouter";
   readonly apiKey: string | undefined;
+  readonly apiKeyEnv?: string;
+  /** Integration secrets retained for redaction, never injected into tests. */
+  readonly credentialValues?: readonly string[];
   readonly cloudflareAccountId: string | undefined;
   readonly providerBaseUrl: string;
   readonly providerModel: string;
@@ -72,6 +75,7 @@ export interface ResolvedProjectConfig {
 interface RawEnvironment {
   readonly baseUrl?: unknown;
   readonly variables?: unknown;
+  readonly provider?: unknown;
 }
 
 interface RawConfig extends RawEnvironment {
@@ -129,9 +133,9 @@ const allowed = {
   affected: new Set(["ignore"]),
   viewport: new Set(["width", "height"]),
   thresholds: new Set(["verify", "lowConfidenceBand", "contradiction"]),
-  environment: new Set(["baseUrl", "variables"]),
+  environment: new Set(["baseUrl", "variables", "provider"]),
   vision: new Set(["enabled"]),
-  provider: new Set(["name", "model"]),
+  provider: new Set(["name", "model", "apiKeyEnv"]),
 };
 
 function source(
@@ -168,6 +172,8 @@ const REMOVED_KEYS: Readonly<Record<string, string>> = {
     "Vision fallback now uses the TypeSafe provider's image model.",
   "vision.timeoutMs":
     "Vision fallback now uses the TypeSafe provider's request deadline.",
+  "vision.apiKeyEnv":
+    "Vision fallback now uses the TypeSafe provider's API key.",
 };
 
 /** The diagnostic code, message and fix for a key that is not allowed. */
@@ -521,6 +527,23 @@ async function findConfig(
   }
 }
 
+/**
+ * The project-root `.env` that `sedum run` reads, for a command that does not
+ * load sedum.config.yaml. The root is the nearest directory with a config, or
+ * `start` itself. A missing file is empty.
+ */
+export async function readProjectEnvironment(
+  start: string,
+): Promise<Record<string, string | undefined>> {
+  const { root } = await findConfig(start);
+  try {
+    return parseEnv(await readFile(path.join(root, ".env"), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
+}
+
 function freeze(config: ResolvedProjectConfig): ResolvedProjectConfig {
   Object.freeze(config.include);
   Object.freeze(config.exclude);
@@ -530,6 +553,7 @@ function freeze(config: ResolvedProjectConfig): ResolvedProjectConfig {
   Object.freeze(config.thresholds);
   Object.freeze(config.vision);
   Object.freeze(config.variables);
+  Object.freeze(config.credentialValues);
   return Object.freeze(config);
 }
 
@@ -727,6 +751,10 @@ export async function loadProjectConfig(
   const environments = object(raw.environments) ? raw.environments : {};
   const vision = object(raw.vision) ? raw.vision : {};
   const provider = object(raw.provider) ? raw.provider : {};
+  const credentialSettings = [["provider", provider]] as [
+    string,
+    Record<string, unknown>,
+  ][];
   for (const [name, value] of Object.entries(environments)) {
     if (!object(value)) {
       diagnostic(
@@ -741,6 +769,28 @@ export async function loadProjectConfig(
       );
       continue;
     }
+    const key = `environments.${name}.provider`;
+    const settings = value.provider;
+    mapUnknownKeys(
+      node(key),
+      new Set(["apiKeyEnv"]),
+      key,
+      file,
+      counter,
+      diagnostics,
+    );
+    if (settings !== undefined && !object(settings))
+      diagnostic(
+        diagnostics,
+        file,
+        counter,
+        node(key),
+        key,
+        "invalid_config_type",
+        `Configuration key \`${key}\` must be a mapping.`,
+        `Write \`${key}: { apiKeyEnv: MY_API_KEY }\`.`,
+      );
+    if (object(settings)) credentialSettings.push([key, settings]);
     scalarVariables(
       value.variables,
       `environments.${name}.variables`,
@@ -779,6 +829,27 @@ export async function loadProjectConfig(
   const environment = object(selectedRaw)
     ? (selectedRaw as RawEnvironment)
     : {};
+  for (const [prefix, settings] of credentialSettings) {
+    const value = settings.apiKeyEnv;
+    if (
+      value !== undefined &&
+      (typeof value !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(value))
+    )
+      diagnostic(
+        diagnostics,
+        file,
+        counter,
+        node(`${prefix}.apiKeyEnv`),
+        `${prefix}.apiKeyEnv`,
+        "invalid_config_env_name",
+        `Configuration key \`${prefix}.apiKeyEnv\` must be a valid environment variable name.`,
+        "Use letters, digits, and underscores, starting with a letter or underscore.",
+      );
+  }
+  const selectedProvider = object(environment.provider)
+    ? environment.provider
+    : {};
+  const apiKeyEnv = selectedProvider.apiKeyEnv ?? provider.apiKeyEnv;
 
   const browserValue = overrides.browser ?? raw.browser ?? DEFAULTS.browser;
   const browser =
@@ -921,8 +992,12 @@ export async function loadProjectConfig(
     ...fileEnvironment,
     ...hostEnvironment,
   };
+  const providerEnvironment = new Map([
+    ...Object.entries(fileEnvironment),
+    ...Object.entries(hostEnvironment).filter(([, value]) => value?.trim()),
+  ]);
   const providerValue = (name: string): string | undefined =>
-    hostEnvironment[name]?.trim() || fileEnvironment[name]?.trim() || undefined;
+    providerEnvironment.get(name)?.trim() || undefined;
   const cloudflareTokenFrom = (
     environment: Readonly<Record<string, string | undefined>>,
   ): string | undefined => {
@@ -1034,12 +1109,14 @@ export async function loadProjectConfig(
   const openRouterKey =
     openRouterKeyFrom(hostEnvironment) ?? openRouterKeyFrom(fileEnvironment);
   const apiKey =
-    providerName === "clef"
-      ? (cloudflareTokenFrom(hostEnvironment) ??
-        cloudflareTokenFrom(fileEnvironment))
-      : providerName === "openrouter"
-        ? openRouterKey
-        : providerValue("TYPESAFE_API_KEY");
+    typeof apiKeyEnv === "string"
+      ? providerValue(apiKeyEnv)
+      : providerName === "clef"
+        ? (cloudflareTokenFrom(hostEnvironment) ??
+          cloudflareTokenFrom(fileEnvironment))
+        : providerName === "openrouter"
+          ? openRouterKey
+          : providerValue("TYPESAFE_API_KEY");
   const cloudflareAccountId =
     providerName === "clef"
       ? providerValue("CLOUDFLARE_ACCOUNT_ID")
@@ -1059,6 +1136,40 @@ export async function loadProjectConfig(
         "CLOUDFLARE_ACCOUNT_ID must be exactly 32 hexadecimal characters.",
       fix: "Copy the account ID from the Cloudflare dashboard.",
     });
+  const credentialValues = [apiKey].filter((value) => value !== undefined);
+  for (const [, settings] of credentialSettings) {
+    if (typeof settings.apiKeyEnv !== "string") continue;
+    const name = settings.apiKeyEnv;
+    for (const source of [hostEnvironment, fileEnvironment]) {
+      const value = Object.hasOwn(source, name) ? source[name] : undefined;
+      if (value?.trim()) credentialValues.push(value, value.trim());
+    }
+    variables[name] = undefined;
+    for (const [prefix, values] of [
+      ["variables", rootVariables],
+      ...Object.entries(environments)
+        .filter(([, value]) => object(value))
+        .map(
+          ([key, value]) =>
+            [
+              `environments.${key}.variables`,
+              (value as RawEnvironment).variables,
+            ] as const,
+        ),
+    ] as const) {
+      if (object(values) && Object.hasOwn(values, name))
+        diagnostic(
+          diagnostics,
+          file,
+          counter,
+          node(prefix),
+          `${prefix}.${name}`,
+          "api_key_in_config",
+          `${name} must not be stored in sedum.config.yaml.`,
+          `Put ${name} in the project-root .env or invoking process environment.`,
+        );
+    }
+  }
   variables["OPENROUTER_API_KEY"] = undefined;
   // Credentials configure integrations; they are not test variables and must
   // not be forwarded through the flow environment.
@@ -1164,6 +1275,8 @@ export async function loadProjectConfig(
     variables,
     providerName,
     apiKey,
+    credentialValues,
+    ...(typeof apiKeyEnv === "string" ? { apiKeyEnv } : {}),
     cloudflareAccountId,
     providerBaseUrl,
     providerModel,

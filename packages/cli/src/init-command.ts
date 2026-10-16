@@ -71,6 +71,8 @@ const IGNORE = [
   ".env",
   ".sedum/runs/",
   ".sedum/reports/",
+  // `sedum explore` traces, reports and page frames.
+  ".sedum/explore/",
 ] as const;
 
 const WORDMARK = [
@@ -138,19 +140,6 @@ async function pathExists(file: string): Promise<boolean> {
   }
 }
 
-async function regularDirectory(directory: string): Promise<void> {
-  try {
-    await mkdir(directory);
-  } catch (error) {
-    if (code(error) !== "EEXIST") throw error;
-  }
-  const info = await lstat(directory);
-  if (!info.isDirectory() || info.isSymbolicLink())
-    throw new Error(
-      `${path.basename(directory)} exists but is not a regular directory.`,
-    );
-}
-
 async function createOrKeep(
   file: string,
   contents: string,
@@ -202,6 +191,53 @@ async function updateIgnore(
   return `updated .gitignore (${missing.join(", ")})\n`;
 }
 
+async function createStarterFiles(root: string, say: (value: string) => void) {
+  const directory = path.join(root, "tests");
+  try {
+    await mkdir(directory);
+  } catch (error) {
+    if (code(error) !== "EEXIST") throw error;
+  }
+  const info = await lstat(directory);
+  if (!info.isDirectory() || info.isSymbolicLink())
+    throw new Error(
+      `${path.basename(directory)} exists but is not a regular directory.`,
+    );
+  say(
+    `${await createOrKeep(path.join(root, "sedum.config.yaml"), CONFIG)} sedum.config.yaml\n`,
+  );
+  const config = await loadProjectConfig(root);
+  const defaultKeyName = {
+    typesafe: "TYPESAFE_API_KEY",
+    openrouter: "OPENROUTER_API_KEY",
+    clef: "CLOUDFLARE_AUTH_TOKEN",
+  }[config.providerName];
+  const keyName = config.apiKeyEnv ?? defaultKeyName;
+  const setup = {
+    source: PROVIDER_SETUP[config.providerName].source,
+    instructions: PROVIDER_SETUP[config.providerName].instructions.map((line) =>
+      line.replaceAll(defaultKeyName, keyName),
+    ),
+  };
+  const template = ENV_EXAMPLE.replaceAll(defaultKeyName, keyName);
+  const createdExample = await createOrKeep(
+    path.join(root, "tests/example.test.ts"),
+    EXAMPLE,
+  );
+  say(`${createdExample} tests/example.test.ts\n`);
+  const envExample = await createOrKeep(
+    path.join(root, ".env.example"),
+    template,
+  );
+  say(`${envExample} .env.example\n`);
+  return {
+    config,
+    setup,
+    createdExample: createdExample === "created",
+    keptEnvExample: envExample === "kept",
+  };
+}
+
 export async function executeInitCommand(
   options: InitOptions,
 ): Promise<InitResult> {
@@ -212,21 +248,9 @@ export async function executeInitCommand(
     options.onOutput?.(value);
   };
   try {
-    let keptEnvExample = false;
-    let createdExample = false;
     if (options.interactive && options.color) say(initBanner(options.columns));
-    await regularDirectory(path.join(root, "tests"));
-    for (const [name, contents] of [
-      ["sedum.config.yaml", CONFIG],
-      ["tests/example.test.ts", EXAMPLE],
-      [".env.example", ENV_EXAMPLE],
-    ] as const) {
-      const result = await createOrKeep(path.join(root, name), contents);
-      if (name === ".env.example" && result === "kept") keptEnvExample = true;
-      if (name === "tests/example.test.ts" && result === "created")
-        createdExample = true;
-      say(`${result} ${name}\n`);
-    }
+    const { config, setup, createdExample, keptEnvExample } =
+      await createStarterFiles(root, say);
     say(await updateIgnore(root, options));
 
     say("\nSedum runs plain-language tests in a browser.\n");
@@ -245,14 +269,13 @@ export async function executeInitCommand(
     };
     if (!supportedNode(options.nodeVersion ?? process.versions.node))
       next("Update Node.js", ["Install Node 20.19.0 or newer."]);
-    const config = await loadProjectConfig(root);
     const hasBrowser = (options.browser ?? browserAvailable)(config.browser);
     const hasEnv = await pathExists(path.join(root, ".env"));
     if (!keyPresent(config))
       next("Add a provider API key", [
-        PROVIDER_SETUP[config.providerName].source,
+        setup.source,
         ...(hasEnv ? [] : ["cp .env.example .env"]),
-        ...PROVIDER_SETUP[config.providerName].instructions,
+        ...setup.instructions,
       ]);
     if (!hasBrowser)
       next(

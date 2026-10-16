@@ -28,6 +28,21 @@ async function project(): Promise<string> {
 }
 
 describe("sedum init", () => {
+  it("uses configured credential names in the template and setup advice", async () => {
+    const cwd = await project();
+    await writeFile(
+      path.join(cwd, "sedum.config.yaml"),
+      "provider: { apiKeyEnv: FOO }\n",
+    );
+    const result = await runCli(["init"], "0.0.0", { cwd });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("set FOO");
+    expect(result.stdout).not.toContain("TYPESAFE_API_KEY");
+    const template = await readFile(path.join(cwd, ".env.example"), "utf8");
+    expect(template).toContain("FOO=");
+    expect(template).not.toContain("TYPESAFE_API_KEY");
+  });
+
   it("keeps installed dependencies out of a fresh project's first git add", async () => {
     const cwd = await project();
     await writeFile(path.join(cwd, "package.json"), '{"private":true}\n');
@@ -75,7 +90,7 @@ describe("sedum init", () => {
     expect(result.stdout).toContain("may incur a charge");
     expect(result.stdout).not.toContain("\u001b[");
     expect(await readFile(path.join(cwd, ".gitignore"), "utf8")).toBe(
-      "node_modules/\n.env\n.sedum/runs/\n.sedum/reports/\n",
+      "node_modules/\n.env\n.sedum/runs/\n.sedum/reports/\n.sedum/explore/\n",
     );
     expect(await readFile(path.join(cwd, ".env.example"), "utf8")).toContain(
       "SAUCE_PASSWORD=secret_sauce",
@@ -144,7 +159,7 @@ describe("sedum init", () => {
     ]);
     expect(artwork[0]?.endsWith("████  █████ █   █")).toBe(true);
     expect(await readFile(path.join(cwd, ".gitignore"), "utf8")).toBe(
-      "node_modules/\n.env\n.sedum/runs/\n.sedum/reports/\n",
+      "node_modules/\n.env\n.sedum/runs/\n.sedum/reports/\n.sedum/explore/\n",
     );
     const again = await executeInitCommand({
       cwd,

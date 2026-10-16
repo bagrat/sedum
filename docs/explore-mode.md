@@ -254,7 +254,9 @@ after its start time and seed:
   over the frames, the write log, coverage and the Jev receipt.
 - `frames/`, with `--replay`: a frame per step, plus the page as each click
   or fill was about to run with the target's box. The HTML report embeds
-  them. Frames can show private page pixels: `--sensitive-origin <url>`
+  them. Each finding shows the page it was seen on: a page check (`semantic`)
+  shows the page before the step's action, other findings the page once the
+  step settled. Frames can show private page pixels: `--sensitive-origin <url>`
   takes none on that origin.
 - `tests/finding-F<n>.test.yaml`, with `--shrink`.
 
@@ -290,8 +292,10 @@ after its start time and seed:
   example, every settings page is "account") make coverage guidance weaker.
 - Jev reads text only, and page text is cut to 3,000 characters per request,
   with at most 60 click targets.
-- The provider is TypeSafe only, configured from `TYPESAFE_API_KEY`. The
-  command does not read `sedum.config.yaml`.
+- The provider is TypeSafe only, configured from `TYPESAFE_API_KEY` (and
+  `TYPESAFE_BASE_URL`, `TYPESAFE_DEFAULT_MODEL`) in your shell or the
+  project-root `.env`, as `sedum run` reads them. The command does not read
+  `sedum.config.yaml`.
 
 ## Evaluation on the fixture shop
 

@@ -6,7 +6,8 @@ title: "CLI commands"
 
 Run `sedum init` in the directory you want to turn into a Sedum project. It
 creates `sedum.config.yaml`, `tests/example.test.ts`, `.env.example`, and
-`.gitignore` entries for `.env`, `.sedum/runs/`, and `.sedum/reports/`. The
+`.gitignore` entries for `.env`, `.sedum/runs/`, `.sedum/reports/`, and
+`.sedum/explore/`. The
 classification cache at `.sedum/classifications.json` remains trackable.
 
 The generated test signs in to the public SauceDemo sample store at

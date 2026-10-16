@@ -54,8 +54,8 @@ explicit `sedum run path/to/file.test.ts` remains supported.
 
 Settings resolve from defaults, then the top-level config, then the selected
 named environment, then explicit command overrides. Named environments may
-override only `baseUrl` and `variables`. Nested settings merge by field, so an
-override of viewport width retains the configured height.
+override `baseUrl`, `variables`, and `provider.apiKeyEnv`. Nested settings
+merge by field, so an override of viewport width retains the configured height.
 For `sedum run`, `--env` selects the named environment before `--browser` and
 `--output-dir` override their configured values. `--url-override` then replaces
 the origin of the resolved entry URL, preserving its path, query, and fragment.
@@ -70,6 +70,40 @@ from the invoking process override `.env`; both override config variables with
 the same name. Provider credentials are accepted only from the process or this
 `.env`, never from `sedum.config.yaml`. `.env` is ignored by Git and should not
 be committed.
+
+### Custom credential variable names
+
+Use `provider.apiKeyEnv` to name the environment variable holding the selected
+provider's key or token. The vision fallback uses the same provider and key:
+
+```yaml
+provider:
+  apiKeyEnv: TYPESAFE_LOCAL_E2E_API_KEY
+environments:
+  staging:
+    provider:
+      apiKeyEnv: TYPESAFE_STAGING_API_KEY
+```
+
+`sedum run --env staging` and `sedum doctor --env staging` use the named
+environment's values; environments without overrides inherit the top-level
+names. Set only variable **names** in YAML, never key values. Names must match
+`[A-Za-z_][A-Za-z0-9_]*`. The process value wins over the project-root `.env`
+value; blank values are treated as missing. An explicit name disables fallback
+to the default names and aliases. Custom credential variables are not exposed
+to tests and cannot be stored in config `variables`.
+
+Sedum uses Node's native `.env` parser. Parsing edge cases can vary by Node
+version: Node 20, 22, and 24 do not retain `__proto__` from `.env`, though an
+explicit process environment value works. Prefer conventional uppercase names
+such as `TYPESAFE_LOCAL_E2E_API_KEY` for portability.
+
+Without these settings, existing behavior is unchanged: TypeSafe reads
+`TYPESAFE_API_KEY`; OpenRouter reads `OPENROUTER_API_KEY`
+or `OPEN_ROUTER_API_KEY`; Clef reads `CLOUDFLARE_AUTH_TOKEN` or
+`CLOUDFLARE_API_TOKEN`. For Clef, `provider.apiKeyEnv` renames the token source;
+`CLOUDFLARE_ACCOUNT_ID` is still required. Doctor, run diagnostics, and newly
+generated init templates use the configured names. Existing init files are kept.
 
 By default, Sedum sends `jev-latest` requests to TypeSafe. A gateway or other
 TypeSafe System One-compatible service can be selected with these connection

@@ -1,8 +1,12 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { InvalidArgumentError } from "commander";
 import { describe, expect, it } from "vitest";
 import { exploreDetect, exploreSafe } from "./cli-arguments.js";
 import {
   exploreMode,
+  exploreProvider,
   seedValue,
   startUrl,
   watchOrigin,
@@ -89,5 +93,32 @@ describe("explore arguments", () => {
       "0.0.0",
     );
     expect(output.exitCode).not.toBe(0);
+  });
+});
+
+describe("explore provider settings", () => {
+  it("reads TYPESAFE_* from the project-root .env, under the shell's values", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "sedum-explore-env-"));
+    try {
+      await writeFile(
+        path.join(root, "sedum.config.yaml"),
+        "browser: chromium\n",
+      );
+      await writeFile(
+        path.join(root, ".env"),
+        "TYPESAFE_API_KEY=file-key\nTYPESAFE_DEFAULT_MODEL=file-model\n",
+      );
+      const nested = path.join(root, "pages");
+      await mkdir(nested);
+      expect(await exploreProvider(nested, {})).toEqual({
+        apiKey: "file-key",
+        model: "file-model",
+      });
+      expect(
+        await exploreProvider(nested, { TYPESAFE_API_KEY: "shell-key" }),
+      ).toEqual({ apiKey: "shell-key", model: "file-model" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

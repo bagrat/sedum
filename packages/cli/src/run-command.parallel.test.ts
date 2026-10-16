@@ -9,11 +9,8 @@ import {
 } from "@sedum-dev/core";
 import { runExitCode } from "./exit-policy.js";
 
-vi.mock("@sedum-dev/provider-typesafe", () => ({
-  TypeSafeAdapter: class {
-    chooseFromScreenshot() {}
-  },
-  IMAGE_MODEL: "jev-1.14.0",
+vi.mock("@sedum-dev/provider-typesafe", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@sedum-dev/provider-typesafe")>()),
   ProviderGate: class {
     constructor(readonly options: { concurrency: number }) {}
     close() {}
@@ -157,6 +154,7 @@ async function project(count: number): Promise<string[]> {
   root = await mkdtemp(path.join(tmpdir(), "sedum-parallel-"));
   previous = process.cwd();
   process.chdir(root);
+  vi.stubEnv("TYPESAFE_API_KEY", "synthetic-typesafe-key");
   const names = Array.from(
     { length: count },
     (_, index) => `t${String(index).padStart(2, "0")}.test.yaml`,
@@ -331,6 +329,35 @@ describe("parallel sedum run", () => {
     const second = output.result.tests.find((test) => test.file === names[1]);
     expect(second).toMatchObject({ state: "completed", verdict: "passed" });
     expect(runExitCode(output.result, false)).toBe(3);
+  });
+
+  it("runs with a custom key and names it in missing-key diagnostics", async () => {
+    const names = await project(1);
+    await writeFile(
+      path.join(root!, "sedum.config.yaml"),
+      "provider: { apiKeyEnv: FOO }\nenvironments:\n  local:\n    provider: { apiKeyEnv: LOCAL_FOO }\n  staging: {}\n",
+    );
+    vi.stubEnv("FOO", "custom-key");
+    const ready = await executeRunCommand({ ...base, paths: names });
+    expect(ready.diagnostic).toBeNull();
+    expect(ready.result.verdict).toBe("passed");
+    vi.stubEnv("FOO", "");
+    const missing = await executeRunCommand({ ...base, paths: names });
+    expect(missing.diagnostic?.fix).toContain("FOO");
+    expect(missing.diagnostic?.fix).not.toContain("TYPESAFE_API_KEY");
+    vi.stubEnv("FOO", "custom-key");
+    const local = await executeRunCommand({
+      ...base,
+      paths: names,
+      environment: "local",
+    });
+    expect(local.diagnostic?.fix).toContain("LOCAL_FOO");
+    const staging = await executeRunCommand({
+      ...base,
+      paths: names,
+      environment: "staging",
+    });
+    expect(staging.result.verdict).toBe("passed");
   });
 
   it("reports missing and rejected Clef credentials without TypeSafe advice or secret leakage", async () => {

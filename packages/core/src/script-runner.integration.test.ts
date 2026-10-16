@@ -37,10 +37,17 @@ const call: ProviderCall = {
   totalCostUsd: 0,
 };
 
-/** Classify plain claims for ai.holds, and expose non-pattern actions. */
+/**
+ * Classify plain claims for ai.holds, and expose non-pattern actions. Like
+ * Jev, answer a bare `the … is shown` claim as an unclear step.
+ */
 function classify(sentences: readonly string[]) {
   const answers: ModelClassification[] = sentences.map((sentence) => {
-    const op: ModelChoice = /^submit\b/iu.test(sentence) ? "click" : "verify";
+    const op: ModelChoice = /^submit\b/iu.test(sentence)
+      ? "click"
+      : /^the\s.+\sis\s+shown$/iu.test(sentence)
+        ? "unsupported_or_unclear"
+        : "verify";
     return {
       op,
       probabilities: Object.fromEntries(
@@ -84,7 +91,10 @@ function choose(
 
 /** A claim `the page shows X` holds when the page text contains X. */
 function holds(claim: string, digest: JudgePageDigest): Promise<JudgeDecision> {
-  const fragment = /shows\s+(.+)$/u.exec(claim)?.[1] ?? claim;
+  const fragment =
+    /shows\s+(.+)$/u.exec(claim)?.[1] ??
+    /^the\s+(.+?)\s+is\s+shown$/u.exec(claim)?.[1] ??
+    claim;
   const found = digest.text.includes(fragment);
   return Promise.resolve({
     holds: found ? 0.97 : 0.03,
@@ -431,6 +441,23 @@ test("late", { url: "/home?user=Ada" }, async ({ ai }) => {
       expect(steps.map((step) => [step.sentence, step.verdict])).toEqual([
         ["the page shows Cart total", null],
         ["the page shows Checkout complete", null],
+      ]);
+    }, 60_000);
+
+    it("takes a literal ai.holds claim without asking the model to classify it", async () => {
+      const { outcome, result } = await run(
+        "holds-literal.test.ts",
+        `test("literal", { url: "/home" }, async ({ ai }) => {
+          const shown = await ai.holds("the Cart total is shown");
+          const missing = await ai.holds("the Checkout complete is shown");
+          if (!shown || missing) throw new Error(\`unexpected \${shown} \${missing}\`);
+        });`,
+      );
+      expect(outcome).toEqual({ status: "passed", file: expect.any(String) });
+      const steps = result.tests[0]!.attempts[0]!.steps;
+      expect(steps.map((step) => [step.sentence, step.verdict])).toEqual([
+        ["the Cart total is shown", null],
+        ["the Checkout complete is shown", null],
       ]);
     }, 60_000);
 

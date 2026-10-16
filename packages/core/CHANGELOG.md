@@ -1,5 +1,15 @@
 # @sedum-dev/core
 
+## 0.1.0-alpha.16
+
+## 0.1.0-alpha.15
+
+### Patch Changes
+
+- 92062ac: Show each `sedum explore` finding with the frame of the page it was seen on. A page check (`--detect semantic`) judges the page before the step's action, but `report.html` and `report.md` showed the page after it: a "stuck_loading on /checkout" finding showed the Orders page the step clicked through to. Findings in `result.json` now carry that `frame`.
+- 00f845c: Run literal `ai.holds` claims such as `ai.holds("the product list is shown")` without asking the model to classify them. The runtime now accepts the same claim shapes as `sedum validate`; before, a claim that validation accepted could stop the test as `invalid_test` because the model answered a bare claim as an unclear step.
+- 7577020: Keep the final `result.json`, `report.html`, and summary when Ctrl-C interrupts `sedum run`, including under `npx`. Playwright's own SIGINT handler exited the process with code 130 as soon as the browsers closed, before Sedum wrote the interrupted result. `PlaywrightBrowserDriver` accepts `callerHandlesSignals: true` to leave SIGINT and SIGTERM to the caller, and `sedum run` sets it.
+
 ## 0.1.0-alpha.14
 
 ### Minor Changes

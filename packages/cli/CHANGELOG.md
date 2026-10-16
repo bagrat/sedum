@@ -1,5 +1,36 @@
 # sedum-cli
 
+## 0.1.0-alpha.16
+
+### Patch Changes
+
+- 34ed07b: Support `provider.apiKeyEnv` and `vision.apiKeyEnv` to read provider credentials
+  from custom environment variable names, with named environment overrides.
+  Use configured names in diagnostics, doctor checks, and init templates while
+  preserving existing defaults and aliases when no setting is supplied.
+- b9be340: Add `.sedum/explore/` to the `.gitignore` rules `sedum init` writes. `sedum explore` stores traces, reports, and page frames there, which can show private page pixels; before, `git add .` after one exploration committed them. Run `sedum init` again in an existing project to add the rule.
+  - @sedum-dev/core@0.1.0-alpha.16
+  - @sedum-dev/reporters@0.1.0-alpha.16
+  - @sedum-dev/provider-typesafe@0.1.0-alpha.16
+  - @sedum-dev/provider-clef@0.1.0-alpha.16
+
+## 0.1.0-alpha.15
+
+### Patch Changes
+
+- 92062ac: Show each `sedum explore` finding with the frame of the page it was seen on. A page check (`--detect semantic`) judges the page before the step's action, but `report.html` and `report.md` showed the page after it: a "stuck_loading on /checkout" finding showed the Orders page the step clicked through to. Findings in `result.json` now carry that `frame`.
+- 387ff1c: Read `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, and `TYPESAFE_DEFAULT_MODEL` from the project-root `.env` in `sedum explore`, as `sedum run` does; the shell's values still win. Before, a key set in `.env` as `sedum init` suggests failed with "Set TYPESAFE_API_KEY to use the TypeSafe provider."
+- 00f845c: Run literal `ai.holds` claims such as `ai.holds("the product list is shown")` without asking the model to classify them. The runtime now accepts the same claim shapes as `sedum validate`; before, a claim that validation accepted could stop the test as `invalid_test` because the model answered a bare claim as an unclear step.
+- 7577020: Keep the final `result.json`, `report.html`, and summary when Ctrl-C interrupts `sedum run`, including under `npx`. Playwright's own SIGINT handler exited the process with code 130 as soon as the browsers closed, before Sedum wrote the interrupted result. `PlaywrightBrowserDriver` accepts `callerHandlesSignals: true` to leave SIGINT and SIGTERM to the caller, and `sedum run` sets it.
+- 3cf2c61: Name every problem in an invalid test file in `sedum run`, as `sedum validate` does. A file with an unknown placeholder used to report only that error; the run now also lists sentences that offline validation rejects, such as an unsupported action or two actions in one step, so one run shows everything to fix.
+- Updated dependencies [92062ac]
+- Updated dependencies [00f845c]
+- Updated dependencies [7577020]
+  - @sedum-dev/core@0.1.0-alpha.15
+  - @sedum-dev/reporters@0.1.0-alpha.15
+  - @sedum-dev/provider-clef@0.1.0-alpha.15
+  - @sedum-dev/provider-typesafe@0.1.0-alpha.15
+
 ## 0.1.0-alpha.14
 
 ### Minor Changes

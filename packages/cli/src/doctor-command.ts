@@ -49,6 +49,10 @@ export interface DoctorProbes {
   readonly output?: (config: ResolvedProjectConfig) => Promise<void>;
 }
 
+export interface DoctorOptions {
+  readonly environment?: string;
+}
+
 const pass = (id: DoctorCheckId, message: string): DoctorCheck => ({
   id,
   status: "pass",
@@ -156,6 +160,7 @@ const VISION_CHECKS = {
 export async function executeDoctorCommand(
   cwd: string,
   probes: DoctorProbes = {},
+  options: DoctorOptions = {},
 ): Promise<DoctorResult> {
   const checks: DoctorCheck[] = [];
   const version = probes.nodeVersion ?? process.versions.node;
@@ -171,7 +176,13 @@ export async function executeDoctorCommand(
 
   let config: ResolvedProjectConfig | null = null;
   try {
-    config = await (probes.loadConfig ?? loadProjectConfig)(cwd);
+    config = probes.loadConfig
+      ? await probes.loadConfig(cwd)
+      : await loadProjectConfig(
+          cwd,
+          process.env,
+          options.environment ? { environment: options.environment } : {},
+        );
     checks.push(pass("config", "Project configuration is valid."));
   } catch {
     checks.push(
@@ -248,7 +259,7 @@ export async function executeDoctorCommand(
         : fail(
             "api_key",
             "Provider API key is missing.",
-            providerDiagnostic(config.providerName, "configuration").fix,
+            providerDiagnostic(config, "configuration").fix,
           ),
   );
 
@@ -265,7 +276,7 @@ export async function executeDoctorCommand(
       fail(
         "api_auth",
         "API authentication could not be checked without a key.",
-        providerDiagnostic(config.providerName, "configuration").fix,
+        providerDiagnostic(config, "configuration").fix,
       ),
     );
   else if (!network)
@@ -310,8 +321,8 @@ export async function executeDoctorCommand(
         : result === "rejected"
           ? fail(
               "api_auth",
-              providerDiagnostic(config.providerName, "authentication").message,
-              providerDiagnostic(config.providerName, "authentication").fix,
+              providerDiagnostic(config, "authentication").message,
+              providerDiagnostic(config, "authentication").fix,
             )
           : result === "unreachable"
             ? fail(

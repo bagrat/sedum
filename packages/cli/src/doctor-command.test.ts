@@ -66,6 +66,44 @@ function probes(config: ResolvedProjectConfig): DoctorProbes {
 }
 
 describe("sedum doctor", () => {
+  it("uses named environment credentials and reports custom names when missing", async () => {
+    const { projectRoot: cwd } = await fixture();
+    await writeFile(
+      path.join(cwd, "sedum.config.yaml"),
+      "provider: { apiKeyEnv: FOO }\nenvironments:\n  local:\n    provider: { apiKeyEnv: LOCAL_FOO }\n",
+    );
+    await writeFile(
+      path.join(cwd, ".env"),
+      "FOO=top-key\nLOCAL_FOO=local-key\n",
+    );
+    const checks: DoctorProbes = {
+      browser: () => true,
+      network: async () => true,
+      output: async () => undefined,
+    };
+    const auth = vi.fn<NonNullable<DoctorProbes["auth"]>>(
+      async () => "accepted",
+    );
+    const result = await runCli(
+      ["doctor", "--env", "local", "--json"],
+      "0.0.0",
+      {
+        cwd,
+        doctorProbes: { ...checks, auth },
+      },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(auth.mock.calls[0]?.[0]).toBe("local-key");
+    await writeFile(path.join(cwd, ".env"), "");
+    const missing = await runCli(["doctor", "--json"], "0.0.0", {
+      cwd,
+      doctorProbes: checks,
+    });
+    expect(missing.exitCode).toBe(3);
+    expect(missing.stdout).toContain("FOO");
+    expect(missing.stdout).not.toMatch(/TYPESAFE_API_KEY|OPEN_ROUTER_API_KEY/);
+  });
+
   it("emits seven passing checks and parseable JSON", async () => {
     const config = await fixture();
     const result = await runCli(["doctor", "--json"], "0.0.0", {

@@ -23,6 +23,128 @@ afterEach(async () => {
 });
 
 describe("project configuration", () => {
+  it.each(["constructor", "toString", "__proto__"])(
+    "resolves the valid credential name %s without inherited properties",
+    async (name) => {
+      const root = await temporaryRoot();
+      await writeFile(
+        path.join(root, "sedum.config.yaml"),
+        `provider: { apiKeyEnv: ${name} }\n`,
+      );
+      const offline = await loadProjectConfig(
+        root,
+        {},
+        {},
+        { readEnvironmentFile: false },
+      );
+      expect(offline.apiKey).toBeUndefined();
+      const fromProcess = await loadProjectConfig(root, {
+        [name]: "process-sentinel",
+      });
+      expect(fromProcess.apiKey).toBe("process-sentinel");
+    },
+  );
+
+  it.each(["constructor", "toString"])(
+    "resolves the own credential name %s from .env",
+    async (name) => {
+      const root = await temporaryRoot();
+      await writeFile(
+        path.join(root, "sedum.config.yaml"),
+        `provider: { apiKeyEnv: ${name} }\n`,
+      );
+      await writeFile(path.join(root, ".env"), `${name}=file-sentinel\n`);
+      const fromFile = await loadProjectConfig(root, {});
+      expect(fromFile.apiKey).toBe("file-sentinel");
+    },
+  );
+
+  it.each(["typesafe", "openrouter", "clef"])(
+    "resolves a custom %s key with environment and source precedence",
+    async (name) => {
+      const root = await temporaryRoot();
+      await writeFile(
+        path.join(root, "sedum.config.yaml"),
+        `
+provider: { name: ${name}, apiKeyEnv: FOO }
+environments:
+  local:
+    provider: { apiKeyEnv: LOCAL_FOO }
+  staging: {}
+`,
+      );
+      await writeFile(
+        path.join(root, ".env"),
+        "FOO=file-key\nLOCAL_FOO=local-key\n",
+      );
+      const host = { FOO: " process-key " };
+      const top = await loadProjectConfig(root, host);
+      expect(top.apiKey).toBe("process-key");
+      expect(top.variables.FOO).toBeUndefined();
+      expect(top.variables.LOCAL_FOO).toBeUndefined();
+      expect(
+        (await loadProjectConfig(root, {}, { environment: "staging" })).apiKey,
+      ).toBe("file-key");
+      const local = await loadProjectConfig(root, host, {
+        environment: "local",
+      });
+      expect(local.apiKey).toBe("local-key");
+      await writeFile(path.join(root, ".env"), "");
+      const missing = await loadProjectConfig(root, {
+        TYPESAFE_API_KEY: "wrong",
+        OPENROUTER_API_KEY: "wrong",
+        CLOUDFLARE_AUTH_TOKEN: "wrong",
+      });
+      expect(missing.apiKey).toBeUndefined();
+    },
+  );
+
+  it.each(["provider", "environments.local.provider"])(
+    "rejects invalid variable names in %s even in unselected environments",
+    async (key) => {
+      const root = await temporaryRoot();
+      for (const value of ["BAD-NAME", "1KEY", "", null, 42]) {
+        const raw = key.startsWith("environments")
+          ? {
+              environments: {
+                local: { [key.split(".")[2]!]: { apiKeyEnv: value } },
+              },
+            }
+          : { [key]: { apiKeyEnv: value } };
+        await writeFile(
+          path.join(root, "sedum.config.yaml"),
+          JSON.stringify(raw),
+        );
+        await expect(
+          loadProjectConfig(root, {}, {}, { readEnvironmentFile: false }),
+        ).rejects.toMatchObject({
+          diagnostics: expect.arrayContaining([
+            expect.objectContaining({
+              code: "invalid_config_env_name",
+              key: `${key}.apiKeyEnv`,
+            }),
+          ]),
+        });
+      }
+    },
+  );
+
+  it("rejects custom credentials stored as test variables", async () => {
+    const root = await temporaryRoot();
+    await writeFile(
+      path.join(root, "sedum.config.yaml"),
+      "provider: { apiKeyEnv: FOO }\nenvironments:\n  local:\n    variables: { FOO: forbidden }\n",
+    );
+    await expect(loadProjectConfig(root, {})).rejects.toMatchObject({
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: "api_key_in_config",
+          key: "environments.local.variables.FOO",
+        }),
+      ]),
+    });
+  });
+
   it("validates and freezes default-empty affected ignores", async () => {
     const root = await temporaryRoot();
     expect((await loadProjectConfig(root, {})).affected.ignore).toEqual([]);
@@ -278,6 +400,7 @@ describe("project configuration", () => {
   enabled: yes
   model: google/gemini-3.8-flash
   timeoutMs: 2500
+  apiKeyEnv: SIGHT
   retry: true
 constructor: 1
 variables:
@@ -298,6 +421,10 @@ variables:
         }),
         expect.objectContaining({
           key: "vision.timeoutMs",
+          code: "removed_config_key",
+        }),
+        expect.objectContaining({
+          key: "vision.apiKeyEnv",
           code: "removed_config_key",
         }),
         expect.objectContaining({

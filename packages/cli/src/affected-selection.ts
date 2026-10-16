@@ -142,7 +142,7 @@ export async function selectAffectedTests(options: {
       error instanceof ProviderError &&
       (error.code === "authentication" || error.code === "configuration")
     ) {
-      const diagnostic = providerDiagnostic(config.providerName, error.code);
+      const diagnostic = providerDiagnostic(config, error.code);
       throw new AffectedSelectionError(
         `${diagnostic.message}\nFix: ${diagnostic.fix}`,
       );

@@ -102,7 +102,7 @@ export async function executeSelectedTests(
 
   const gate = new ProviderGate({ concurrency: providerConcurrency });
   const resources = await createExecutionResources(request, gate);
-  const driver = new PlaywrightBrowserDriver();
+  const driver = new PlaywrightBrowserDriver({ callerHandlesSignals: true });
   const browsers = Array.from(
     { length: lanes },
     () => new ReusableBrowserDriver(driver),
@@ -296,7 +296,7 @@ function testDependencies(
       recorder: request.recorder,
       slot: { ordinal, lane },
       privacy: {
-        secretValues: [],
+        secretValues: [...(config.credentialValues ?? [])],
         sensitiveOrigins: options.sensitiveOrigins,
       },
       evidenceEnabled: options.evidence,
@@ -317,7 +317,11 @@ async function handleOperationalFailure(
   outcome: MutableOutcome,
 ): Promise<"complete" | "stop"> {
   await slot.browser.recycle();
-  const diagnostic = flowDiagnostic(result, request.config.providerName);
+  const diagnostic = flowDiagnostic(
+    result,
+    request.config.providerName,
+    request.config.apiKeyEnv,
+  );
   outcome.operational ??= diagnostic;
   if (stopsRun(result.code)) return "stop";
   outcome.erroredTests += 1;
