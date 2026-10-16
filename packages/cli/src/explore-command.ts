@@ -696,28 +696,40 @@ async function explore(
   flags: ExploreFlags,
   io: ExploreIo,
 ): Promise<number> {
+  const credentials = await projectCredentials(io);
+  if (!credentials) return 3;
   const { ProviderError } = await import("@sedum-dev/core");
-  let credentials: ExploreCredentials;
   try {
-    credentials = await exploreProvider(io.cwd);
+    return await run(url, flags, io, credentials.provider);
+  } catch (error) {
+    if (!(error instanceof ProviderError && error.code === "configuration"))
+      throw error;
+    io.writeErr(missingKeyMessage(credentials, error.message));
+  }
+  return 3;
+}
+
+/** The project's TypeSafe credentials, or null after reporting a bad config. */
+async function projectCredentials(
+  io: ExploreIo,
+): Promise<ExploreCredentials | null> {
+  try {
+    return await exploreProvider(io.cwd);
   } catch (error) {
     if (!(error instanceof ProjectConfigError)) throw error;
     const diagnostic = configDiagnostic(error);
     io.writeErr(`${diagnostic.message}\nFix: ${diagnostic.fix}\n`);
-    return 3;
+    return null;
   }
-  const { provider, keyName } = credentials;
-  try {
-    return await run(url, flags, io, provider);
-  } catch (error) {
-    if (!(error instanceof ProviderError && error.code === "configuration"))
-      throw error;
-    const message = provider.apiKey
-      ? error.message
-      : `Set ${keyName} to use the TypeSafe provider.`;
-    io.writeErr(
-      `${message}\nFix: set ${keyName} in the project-root .env or your shell, or use --mode random or --mode heuristic without --shrink.\n`,
-    );
-  }
-  return 3;
+}
+
+/** The adapter's configuration error, naming the variable the key comes from. */
+function missingKeyMessage(
+  { provider, keyName }: ExploreCredentials,
+  adapterMessage: string,
+): string {
+  const message = provider.apiKey
+    ? adapterMessage
+    : `Set ${keyName} to use the TypeSafe provider.`;
+  return `${message}\nFix: set ${keyName} in the project-root .env or your shell, or use --mode random or --mode heuristic without --shrink.\n`;
 }
