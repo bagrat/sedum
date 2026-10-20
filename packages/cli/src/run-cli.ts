@@ -22,6 +22,7 @@ import type { RunCommandExecution, RunCommandOptions } from "./run-command.js";
 import type { RelevanceProviderFactory } from "./affected-selection.js";
 import type { DoctorProbes } from "./doctor-command.js";
 import type { AuthOptions, AuthRuntime } from "./auth-command.js";
+import { AuthError } from "./auth-api.js";
 import {
   exploreMode,
   seedValue,
@@ -986,6 +987,10 @@ function promptAuthChoice(
       input: process.stdin,
       output: process.stdout,
     });
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    prompt.on("close", cancel);
+    prompt.on("SIGINT", cancel);
     try {
       choices.forEach((item, index) =>
         writeOut(
@@ -993,9 +998,11 @@ function promptAuthChoice(
         ),
       );
       const answer = await prompt.question(`Select ${kind} number: `, {
-        signal,
+        signal: AbortSignal.any([signal, controller.signal]),
       });
       return choices[Number(answer) - 1]?.id ?? "";
+    } catch {
+      throw new AuthError("Authentication cancelled.");
     } finally {
       prompt.close();
     }

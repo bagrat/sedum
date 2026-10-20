@@ -138,18 +138,26 @@ export async function withAuthStore<T>(
   directory: string | undefined,
   action: (state: AuthState, save: () => Promise<void>) => Promise<T>,
 ): Promise<T> {
-  try {
-    const root = configRoot(directory);
+  const root = configRoot(directory);
+  const unlock = await storageOperation(async () => {
     await prepareDirectory(root);
-    const unlock = await lockStore(root);
-    try {
-      const state = await readState(
-        pathToFileURL(path.join(root, "auth.json")),
-      );
-      return await action(state, () => writeState(root, state));
-    } finally {
-      await unlock();
-    }
+    return lockStore(root);
+  });
+  try {
+    const state = await storageOperation(() =>
+      readState(pathToFileURL(path.join(root, "auth.json"))),
+    );
+    return await action(state, () =>
+      storageOperation(() => writeState(root, state)),
+    );
+  } finally {
+    await storageOperation(unlock);
+  }
+}
+
+async function storageOperation<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
   } catch (error) {
     if (error instanceof AuthError) throw error;
     throw new AuthError(

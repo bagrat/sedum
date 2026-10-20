@@ -111,11 +111,11 @@ function pollInterval(
   interval: number,
 ): number {
   if (result.status === 429) return Math.max(interval, result.retryMs);
-  const error = parse(z.object({ error: z.string() }), result.body).error;
   if (result.status !== 400)
     throw new AuthError(
       "Cloud rejected device login. Start `sedum auth login` again.",
     );
+  const error = parse(z.object({ error: z.string() }), result.body).error;
   if (error === "authorization_pending") return interval;
   if (error === "slow_down") return interval + 5000;
   throw deviceFailure(error);
@@ -145,14 +145,21 @@ async function deviceLogin(origin: string, context: Context) {
     );
   const device = parse(deviceSchema, response.body);
   showActivation(device, origin, context);
-  const deadline = Date.now() + device.expires_in * 1000;
+  const deadline = performance.now() + device.expires_in * 1000;
   let interval = device.interval * 1000;
   let delay = Math.max(interval, response.retryMs);
-  while (Date.now() < deadline) {
-    await sleep(Math.min(delay, deadline - Date.now()), undefined, {
-      signal: context.signal,
-    });
-    if (Date.now() >= deadline) break;
+  while (performance.now() < deadline) {
+    const nextPoll = performance.now() + delay;
+    while (performance.now() < Math.min(nextPoll, deadline)) {
+      await sleep(
+        Math.max(1, Math.min(nextPoll, deadline) - performance.now()),
+        undefined,
+        {
+          signal: context.signal,
+        },
+      );
+    }
+    if (performance.now() >= deadline) break;
     const result = await pollDevice(
       { origin, deadline, deviceCode: device.device_code },
       context,
@@ -164,21 +171,26 @@ async function deviceLogin(origin: string, context: Context) {
   throw expired();
 }
 
-function pollDevice(
+async function pollDevice(
   device: { origin: string; deadline: number; deviceCode: string },
   context: Context,
 ) {
-  const remaining = Math.max(1, Math.ceil(device.deadline - Date.now()));
+  const remaining = Math.max(1, Math.ceil(device.deadline - performance.now()));
   const signal = AbortSignal.any([
     context.signal,
     AbortSignal.timeout(remaining),
   ]);
-  return request(device.origin, "/api/oauth/token", signal, {
-    form: {
-      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-      device_code: device.deviceCode,
-    },
-  });
+  try {
+    return await request(device.origin, "/api/oauth/token", signal, {
+      form: {
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+        device_code: device.deviceCode,
+      },
+    });
+  } catch (error) {
+    if (!context.signal.aborted && signal.aborted) throw expired();
+    throw error;
+  }
 }
 
 function explicitChoice<T extends Choice>(
@@ -261,6 +273,10 @@ async function currentSession(store: Store, context: Context) {
       "Not logged in to this instance. Run `sedum auth login`.",
     );
   if (session.expiresAt > Date.now()) return session;
+  return refreshSession(store, session, context);
+}
+
+async function refreshSession(store: Store, session: Tokens, context: Context) {
   const refreshed = await request(
     store.origin,
     "/api/oauth/token",
@@ -282,16 +298,26 @@ async function currentSession(store: Store, context: Context) {
   return next;
 }
 
-async function status(store: Store, context: Context) {
+async function membership(store: Store, context: Context) {
   const session = await currentSession(store, context);
-  const response = await request(store.origin, "/api/auth/me", context.signal, {
+  let response = await request(store.origin, "/api/auth/me", context.signal, {
     access: session.access_token,
   });
+  if (response.status === 401) {
+    const next = await refreshSession(store, session, context);
+    response = await request(store.origin, "/api/auth/me", context.signal, {
+      access: next.access_token,
+    });
+  }
   if (!response.ok)
     throw new AuthError(
       "Cloud could not validate this session or current membership. Run `sedum auth login` again.",
     );
-  const me = parse(membershipSchema, response.body);
+  return parse(membershipSchema, response.body);
+}
+
+async function status(store: Store, context: Context) {
+  const me = await membership(store, context);
   const previous = store.state.selections[store.origin];
   // Clear stale selections before prompting or reporting a selection error.
   delete store.state.selections[store.origin];
