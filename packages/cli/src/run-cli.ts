@@ -1,6 +1,10 @@
 import { withCommand } from "./invocation.js";
 import { Command, CommanderError } from "commander";
-import type { BrowserInstallResult, RunResult } from "@sedum-dev/core";
+import type {
+  BrowserInstallResult,
+  BrowserKind,
+  RunResult,
+} from "@sedum-dev/core";
 import {
   createTerminalReporter,
   ReporterLifecycle,
@@ -735,26 +739,32 @@ export async function runCli(
     .command("doctor")
     .description("check whether this environment can run Sedum")
     .option("--env <name>", "select a named environment")
+    .option("--browser <kind>", "chrome or chromium")
     .option("--json", "print versioned JSON checks on stdout", false)
     .addHelpText(
       "after",
       "\nThe authenticated API check makes one small, potentially billable request.\n\nExit codes:\n  0 all checks passed\n  3 one or more prerequisites failed\n",
     )
-    .action(async (options: { json: boolean; env?: string }) => {
-      const { executeDoctorCommand, renderDoctorText } =
-        await import("./doctor-command.js");
-      const result = await executeDoctorCommand(
-        cwd,
-        runtime.doctorProbes,
-        options.env ? { environment: options.env } : {},
-      );
-      writeOut(
-        options.json ? `${JSON.stringify(result)}\n` : renderDoctorText(result),
-      );
-      exitCode = result.checks.every((check) => check.status === "pass")
-        ? 0
-        : 3;
-    });
+    .action(
+      async (options: { json: boolean; env?: string; browser?: string }) => {
+        const { executeDoctorCommand, renderDoctorText } =
+          await import("./doctor-command.js");
+        const result = await executeDoctorCommand(cwd, runtime.doctorProbes, {
+          ...(options.env ? { environment: options.env } : {}),
+          ...(options.browser
+            ? { browser: options.browser as BrowserKind }
+            : {}),
+        });
+        writeOut(
+          options.json
+            ? `${JSON.stringify(result)}\n`
+            : renderDoctorText(result),
+        );
+        exitCode = result.checks.every((check) => check.status === "pass")
+          ? 0
+          : 3;
+      },
+    );
 
   program
     .command("validate")

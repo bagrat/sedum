@@ -65,6 +65,8 @@ export interface ResolvedProjectConfig {
   readonly exclude: readonly string[];
   readonly affected: { readonly ignore: readonly string[] };
   readonly browser: BrowserKind;
+  /** Where `browser` came from: `--browser`, `SEDUM_BROWSER`, a config key, or `default`. */
+  readonly browserSource: BrowserSource;
   readonly viewport: { readonly width: number; readonly height: number };
   readonly thresholds: Required<VerifyPolicy>;
   readonly outputDir: string;
@@ -91,6 +93,7 @@ export interface ResolvedProjectConfig {
 
 interface RawEnvironment {
   readonly baseUrl?: unknown;
+  readonly browser?: unknown;
   readonly variables?: unknown;
   readonly provider?: unknown;
 }
@@ -150,7 +153,7 @@ const allowed = {
   affected: new Set(["ignore"]),
   viewport: new Set(["width", "height"]),
   thresholds: new Set(["verify", "lowConfidenceBand", "contradiction"]),
-  environment: new Set(["baseUrl", "variables", "provider"]),
+  environment: new Set(["baseUrl", "browser", "variables", "provider"]),
   vision: new Set(["enabled"]),
   provider: new Set(["name", "model", "apiKeyEnv"]),
 };
@@ -181,6 +184,36 @@ function diagnostic(
     message,
     fix,
   });
+}
+
+export type BrowserSource =
+  | "--browser"
+  | "SEDUM_BROWSER"
+  | `environments.${string}.browser`
+  | "browser"
+  | "default";
+
+function isBrowserKind(value: unknown): value is BrowserKind {
+  return value === "chrome" || value === "chromium";
+}
+
+/** The highest-precedence browser setting and where it came from. */
+function chooseBrowser(
+  flag: unknown,
+  variable: unknown,
+  environmentValue: unknown,
+  environmentName: string | null,
+  rootValue: unknown,
+): { readonly value: unknown; readonly source: BrowserSource } {
+  if (flag !== undefined) return { value: flag, source: "--browser" };
+  if (variable) return { value: variable, source: "SEDUM_BROWSER" };
+  if (environmentValue !== undefined && environmentName !== null)
+    return {
+      value: environmentValue,
+      source: `environments.${environmentName}.browser`,
+    };
+  if (rootValue !== undefined) return { value: rootValue, source: "browser" };
+  return { value: DEFAULTS.browser, source: "default" };
 }
 
 /** Keys that once configured the OpenRouter vision resolver. */
@@ -859,23 +892,6 @@ export async function loadProjectConfig(
     : {};
   const apiKeyEnv = selectedProvider.apiKeyEnv ?? provider.apiKeyEnv;
 
-  const browserValue = overrides.browser ?? raw.browser ?? DEFAULTS.browser;
-  const browser =
-    browserValue === "chrome" || browserValue === "chromium"
-      ? browserValue
-      : DEFAULTS.browser;
-  if (browserValue !== "chrome" && browserValue !== "chromium")
-    diagnostic(
-      diagnostics,
-      file,
-      counter,
-      node("browser"),
-      "browser",
-      "invalid_config_browser",
-      "Configuration key `browser` must be `chrome` or `chromium`.",
-      "Choose one of the supported browser names.",
-    );
-
   const verify = probability(
     overrides.thresholds?.minP ?? thresholds.verify,
     DEFAULTS.thresholds.minP,
@@ -963,6 +979,35 @@ export async function loadProjectConfig(
         "Could not read or parse the project-root .env file.",
         "Correct its dotenv syntax and permissions, or remove it.",
       );
+  }
+
+  const hostBrowser = hostEnvironment.SEDUM_BROWSER?.trim();
+  const browserChoice = chooseBrowser(
+    overrides.browser,
+    hostBrowser || fileEnvironment.SEDUM_BROWSER?.trim(),
+    environment.browser,
+    typeof selected === "string" ? selected : null,
+    raw.browser,
+  );
+  const browser = isBrowserKind(browserChoice.value)
+    ? browserChoice.value
+    : DEFAULTS.browser;
+  if (!isBrowserKind(browserChoice.value)) {
+    const fromConfig =
+      browserChoice.source !== "--browser" &&
+      browserChoice.source !== "SEDUM_BROWSER";
+    diagnostic(
+      diagnostics,
+      browserChoice.source === "SEDUM_BROWSER" && !hostBrowser
+        ? environmentFile
+        : file,
+      counter,
+      fromConfig ? node(browserChoice.source) : undefined,
+      browserChoice.source,
+      "invalid_config_browser",
+      `\`${browserChoice.source}\` must be \`chrome\` or \`chromium\`.`,
+      "Choose one of the supported browser names.",
+    );
   }
 
   const include = stringList(
@@ -1271,6 +1316,7 @@ export async function loadProjectConfig(
     exclude,
     affected: { ignore: affectedIgnore },
     browser,
+    browserSource: browserChoice.source,
     viewport: { width, height },
     thresholds: { minP: verify, band, contradictionCutoff },
     outputDir,
