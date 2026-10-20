@@ -61,9 +61,10 @@ export async function request(
       ...requestOptions(options),
     });
     const body: unknown =
-      endpoint === "/api/oauth/revoke" && response.ok
-        ? {}
-        : await response.json();
+      (response.ok && endpoint !== "/api/oauth/revoke") ||
+      (response.status === 400 && endpoint === "/api/oauth/token")
+        ? await response.json()
+        : {};
     return {
       ok: response.ok,
       status: response.status,
