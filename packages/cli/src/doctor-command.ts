@@ -9,6 +9,7 @@ import {
   DEFAULT_PROVIDER_BASE_URL,
   DEFAULT_PROVIDER_MODEL,
   loadProjectConfig,
+  ProjectConfigError,
   type ResolvedProjectConfig,
 } from "./config.js";
 import { providerDiagnostic } from "./diagnostics.js";
@@ -51,6 +52,7 @@ export interface DoctorProbes {
 
 export interface DoctorOptions {
   readonly environment?: string;
+  readonly browser?: BrowserKind;
 }
 
 const pass = (id: DoctorCheckId, message: string): DoctorCheck => ({
@@ -157,6 +159,12 @@ const VISION_CHECKS = {
   ),
 };
 
+function browserOrigin(config: ResolvedProjectConfig): string {
+  return config.browserSource === "default"
+    ? "the default"
+    : `from ${config.browserSource}`;
+}
+
 export async function executeDoctorCommand(
   cwd: string,
   probes: DoctorProbes = {},
@@ -178,18 +186,22 @@ export async function executeDoctorCommand(
   try {
     config = probes.loadConfig
       ? await probes.loadConfig(cwd)
-      : await loadProjectConfig(
-          cwd,
-          process.env,
-          options.environment ? { environment: options.environment } : {},
-        );
+      : await loadProjectConfig(cwd, process.env, {
+          ...(options.environment ? { environment: options.environment } : {}),
+          ...(options.browser ? { browser: options.browser } : {}),
+        });
     checks.push(pass("config", "Project configuration is valid."));
-  } catch {
+  } catch (error) {
+    const detail =
+      error instanceof ProjectConfigError ? error.diagnostics[0] : undefined;
     checks.push(
       fail(
         "config",
-        "Project configuration could not be loaded.",
-        "Correct sedum.config.yaml or the project-root .env and check file permissions.",
+        detail
+          ? `Project configuration could not be loaded: ${detail.message}`
+          : "Project configuration could not be loaded.",
+        detail?.fix ??
+          "Correct sedum.config.yaml or the project-root .env and check file permissions.",
       ),
     );
   }
@@ -199,10 +211,13 @@ export async function executeDoctorCommand(
       const available = (probes.browser ?? browserAvailable)(config.browser);
       checks.push(
         available
-          ? pass("browser", `${config.browser} is available.`)
+          ? pass(
+              "browser",
+              `${config.browser} is available (${browserOrigin(config)}).`,
+            )
           : fail(
               "browser",
-              `${config.browser} was not found.`,
+              `${config.browser} was not found (${browserOrigin(config)}).`,
               "Install Chrome or run `sedum browsers install chromium`; check the configured browser.",
             ),
       );
