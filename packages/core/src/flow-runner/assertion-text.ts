@@ -5,7 +5,6 @@ import {
   waitForPageChange,
   type SentenceAssertionContext,
 } from "./assertion-support.js";
-import { unsupported } from "./support.js";
 import { quietPage, visibleText } from "../page-bridge.js";
 import { countText, type TextClaim } from "../step-operands.js";
 
@@ -54,14 +53,6 @@ function failureMessage(claim: TextClaim, found: number) {
   return `The text appears ${frequency} on the page.`;
 }
 
-function unreadable(context: SentenceAssertionContext) {
-  const message = "The page text could not be read.";
-  return context.record(
-    unsupported(context.step.source.file, context.step.source, message),
-    { error: { code: "text_unreadable", message } },
-  );
-}
-
 export async function executeTextAssertion(
   context: SentenceAssertionContext,
   claim: TextClaim,
@@ -71,19 +62,23 @@ export async function executeTextAssertion(
   const wanted = (claim.alternatives ?? [claim.text]).map((text) =>
     revealValues(text, context.data),
   );
-  let message = "";
+  let error = { code: "text_check", message: "" };
   for (;;) {
     const before = await readPageVersion(context.page);
     await quietPage(context.page, 80, 2_000).catch(() => undefined);
-    let found: number;
-    try {
-      found = await countMatches(context, claim, wanted);
-    } catch {
-      return unreadable(context);
-    }
-    if (expectationHolds(claim, found)) return context.record("continue");
-    message = failureMessage(claim, found);
+    // A page mid-navigation has no readable text yet: keep polling until the
+    // deadline rather than ending the step.
+    const found = await countMatches(context, claim, wanted).catch(() => null);
+    if (found !== null && expectationHolds(claim, found))
+      return context.record("continue");
+    error =
+      found === null
+        ? {
+            code: "text_unreadable",
+            message: "The page text could not be read.",
+          }
+        : { code: "text_check", message: failureMessage(claim, found) };
     if (!(await waitForPageChange(context, before, deadline, false))) break;
   }
-  return context.record("failed", { error: { code: "text_check", message } });
+  return context.record("failed", { error });
 }
