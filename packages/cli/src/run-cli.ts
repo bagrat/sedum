@@ -21,6 +21,7 @@ import {
 import type { RunCommandExecution, RunCommandOptions } from "./run-command.js";
 import type { RelevanceProviderFactory } from "./affected-selection.js";
 import type { DoctorProbes } from "./doctor-command.js";
+import type { AuthOptions, AuthRuntime } from "./auth-command.js";
 import {
   exploreMode,
   seedValue,
@@ -68,6 +69,7 @@ export interface CliOutput {
 }
 
 export interface CliRuntime {
+  readonly auth?: AuthRuntime;
   readonly capabilities?: OutputCapabilities;
   readonly stdout?: (value: string) => void;
   readonly stderr?: (value: string) => void;
@@ -122,27 +124,14 @@ export async function runCli(
   const cwd = runtime.cwd ?? process.cwd();
   let exitCode = 3;
 
-  const program = new Command()
-    .name("sedum")
-    .description(
-      "Run plain-English browser tests with deterministic automation.",
-    )
-    .version(version, "-v, --version", "print the installed Sedum version")
-    .helpOption("-h, --help", "show command help")
-    .showSuggestionAfterError()
-    .showHelpAfterError("Run `sedum --help` to see available commands.")
-    .exitOverride()
-    .configureOutput({
-      writeOut,
-      writeErr,
-      outputError: (value, write) => write(value),
-    })
-    .addHelpText(
-      "after",
-      "\nExamples:\n  sedum init\n  sedum run tests/login.test.yaml\n  sedum validate\n  sedum list --json\n  sedum doctor --json\n  sedum browsers install chromium\n\nExit codes:\n  0 passed\n  1 failed test (validate and list: invalid test files)\n  2 flagged pass with --strict\n  3 command or operational error\n",
-    );
-
-  program.action(() => commandHelp(program, writeErr));
+  const program = createProgram(version, writeOut, writeErr);
+  registerAuthCommands(program, runtime, {
+    writeOut,
+    writeErr,
+    setExitCode: (value) => {
+      exitCode = value;
+    },
+  });
 
   program
     .command("init")
@@ -907,6 +896,110 @@ export async function runCli(
     }
   }
   return { stdout: stdout.join(""), stderr: stderr.join(""), exitCode };
+}
+
+function createProgram(
+  version: string,
+  writeOut: (value: string) => void,
+  writeErr: (value: string) => void,
+): Command {
+  const program = new Command()
+    .name("sedum")
+    .description(
+      "Run plain-English browser tests with deterministic automation.",
+    )
+    .version(version, "-v, --version", "print the installed Sedum version")
+    .helpOption("-h, --help", "show command help")
+    .showSuggestionAfterError()
+    .showHelpAfterError("Run `sedum --help` to see available commands.")
+    .exitOverride()
+    .configureOutput({
+      writeOut,
+      writeErr,
+      outputError: (value, write) => write(value),
+    })
+    .addHelpText(
+      "after",
+      "\nExamples:\n  sedum init\n  sedum run tests/login.test.yaml\n  sedum validate\n  sedum list --json\n  sedum doctor --json\n  sedum browsers install chromium\n  sedum auth login --url <Cloud origin>\n\nExit codes:\n  0 passed\n  1 failed test (validate and list: invalid test files)\n  2 flagged pass with --strict\n  3 command or operational error\n",
+    );
+  program.action(() => commandHelp(program, writeErr));
+  return program;
+}
+
+function registerAuthCommands(
+  program: Command,
+  runtime: CliRuntime,
+  output: {
+    writeOut: (value: string) => void;
+    writeErr: (value: string) => void;
+    setExitCode: (value: number) => void;
+  },
+): void {
+  const { writeOut, writeErr } = output;
+  const auth = program
+    .command("auth")
+    .description(
+      "manage Cloud account sessions (separate from CI upload tokens)",
+    );
+  auth.action(() => commandHelp(auth, writeErr));
+  for (const name of ["login", "status", "logout"]) {
+    auth
+      .command(name)
+      .description(`${name} a Cloud account session`)
+      .option("--url <origin>", "self-hosted Cloud origin (or SEDUM_CLOUD_URL)")
+      .option("--organization <id-or-name>", "select current organization")
+      .option("--project <id-or-name>", "select current project")
+      .option(
+        "--no-browser",
+        "print activation instructions without opening a browser",
+      )
+      .action(async (options: AuthOptions) => {
+        const { executeAuthCommand } = await import("./auth-command.js");
+        const interactive =
+          (runtime.capabilities ?? plainOutput).stdoutIsTTY &&
+          process.stdin.isTTY === true;
+        const choose =
+          runtime.auth?.choose ??
+          (interactive ? promptAuthChoice(writeOut) : undefined);
+        output.setExitCode(
+          await executeAuthCommand(
+            name,
+            {
+              options,
+              runtime: { ...runtime.auth, ...(choose ? { choose } : {}) },
+              write: writeOut,
+              writeErr,
+            },
+            runtime.signal,
+          ),
+        );
+      });
+  }
+}
+
+function promptAuthChoice(
+  writeOut: (value: string) => void,
+): NonNullable<AuthRuntime["choose"]> {
+  return async (kind, choices, signal) => {
+    const { createInterface } = await import("node:readline/promises");
+    const prompt = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    try {
+      choices.forEach((item, index) =>
+        writeOut(
+          `${index + 1}. ${JSON.stringify(item.name)} (${JSON.stringify(item.id)})\n`,
+        ),
+      );
+      const answer = await prompt.question(`Select ${kind} number: `, {
+        signal,
+      });
+      return choices[Number(answer) - 1]?.id ?? "";
+    } finally {
+      prompt.close();
+    }
+  };
 }
 
 interface FinalRunReportOutput {

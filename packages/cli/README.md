@@ -8,6 +8,46 @@ Sedum is an open-source (MIT) browser end-to-end test runner built on Playwright
 
 > **Status: pre-alpha.** The test format may change before 1.0, and Windows is experimental. Linux and macOS are verified.
 
+## Cloud account login
+
+Account sessions are separate from CI/project upload and read tokens. Login does
+not configure or change automatic uploads, provider keys, or environment variables.
+No hosted instance is assumed: supply your own Cloud origin.
+
+```sh
+npx sedum auth login --url https://your-cloud.example --no-browser
+npx sedum auth status
+npx sedum auth logout
+```
+
+Omit `--no-browser` to open the system browser best effort. The activation URL
+and human code are always printed; use them on another machine for SSH/headless
+login. Ctrl-C cancels waiting. URLs must use HTTPS, except HTTP on localhost,
+127.0.0.1 or ::1 for local development. Redirects are refused. `--url` overrides
+`SEDUM_CLOUD_URL`, which overrides the previously selected origin.
+
+`login` and `status` select a sole organization/project automatically. With
+multiple choices use the terminal menu or `--organization <ID-or-name>` and
+`--project <ID-or-name>`; names must be unambiguous. Noninteractive commands fail
+instead of prompting. Login is still saved if the account has no projects or a
+selection needs clarification. Create/join the organization and create a project
+in Cloud, then rerun `auth status`. Status fetches live membership and refreshes
+expired access tokens, rotating the refresh secret. Session lifetime is enforced
+by Cloud (maximum 30 days); login again when refresh is rejected.
+
+Credentials are stored per origin in the platform user config directory:
+`$XDG_CONFIG_HOME/sedum/auth.json` or `~/.config/sedum/auth.json` (Windows:
+`%APPDATA%/sedum/auth.json`). **Limitation:** this fallback is not an OS keychain;
+secrets are plaintext, protected by owner-only directory/file permissions on
+POSIX. Windows inherits user-directory ACLs; ensure other users cannot read it.
+Keep this directory outside your checkout; never copy it into `.env` or Git.
+Selected origin and IDs are separate fields from session secrets. Writes are
+atomic and auth commands take an exclusive lock, including during refresh, to
+prevent concurrent refresh rotation. After a crash, remove `auth.lock` only once
+you have confirmed no other auth command is running. Symlink credential paths
+and unsafe POSIX permissions are refused. Offline logout removes local secrets
+but warns if server revocation could not be confirmed.
+
 ## Try it
 
 You need Node.js 20.19 or newer and credentials for TypeSafe Jev (the default) or Cloudflare Clef.

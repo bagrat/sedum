@@ -2,6 +2,41 @@
 title: "CLI commands"
 ---
 
+## `sedum auth login`, `status`, and `logout`
+
+Connect your Sedum account through a browser, including on self-hosted instances:
+
+```sh
+sedum auth login --url https://your-cloud.example
+sedum auth status
+sedum auth logout
+```
+
+Login prints an activation URL and human code, opens the browser when possible,
+and waits for your explicit approval. Use `--no-browser` over SSH, or press Ctrl-C
+to cancel. No GitHub secret is handled by the CLI. Instance URLs require HTTPS
+except on loopback. Choose the instance with `--url`, `SEDUM_CLOUD_URL`, or the
+last selected origin, in that order.
+
+Your sole organization/project is selected automatically; otherwise choose in an
+interactive terminal or pass `--organization` and `--project` with current IDs or
+unambiguous names. `status` checks live memberships and renews expired access.
+An account with no organization/project can still log in; create them in Cloud
+and rerun `status`. Login does not grant new roles or configure uploads.
+
+Sessions use rotating refresh credentials, expire after at most 30 days, and are
+revoked by online logout. Offline logout removes local credentials but cannot
+confirm remote revocation. CI and unattended agents should continue using
+separate project upload/read credentials, not your personal login.
+
+Credentials are saved outside the checkout in `$XDG_CONFIG_HOME/sedum/auth.json`
+or `~/.config/sedum/auth.json` (`%APPDATA%/sedum/auth.json` on Windows), separated
+by instance origin. This is a plaintext file fallback, not an OS keychain: POSIX
+files/directories require owner-only permissions, and Windows relies on inherited
+user-directory ACLs. Keep this directory private and out of Git. Commands lock
+the store during authentication/refresh; after a crash, remove `auth.lock` only
+after confirming no other auth command is running.
+
 ## `sedum init`
 
 Run `sedum init` in the directory you want to turn into a Sedum project. It
