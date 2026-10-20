@@ -126,12 +126,11 @@ export async function runCli(
   let exitCode = 3;
 
   const program = createProgram(version, writeOut, writeErr);
-  registerAuthCommands(program, runtime, {
+  await registerAccountCommands(program, runtime, {
+    rawOut,
     writeOut,
     writeErr,
-    setExitCode: (value) => {
-      exitCode = value;
-    },
+    setExitCode: (value) => (exitCode = value),
   });
 
   program
@@ -927,15 +926,16 @@ function createProgram(
   return program;
 }
 
-function registerAuthCommands(
+async function registerAccountCommands(
   program: Command,
   runtime: CliRuntime,
   output: {
+    rawOut: (value: string) => void;
     writeOut: (value: string) => void;
     writeErr: (value: string) => void;
     setExitCode: (value: number) => void;
   },
-): void {
+): Promise<void> {
   const { writeOut, writeErr } = output;
   const auth = program
     .command("auth")
@@ -976,6 +976,8 @@ function registerAuthCommands(
         );
       });
   }
+  const { registerCloudCommands } = await import("./cloud-command.js");
+  registerCloudCommands(program, runtime, output);
 }
 
 function promptAuthChoice(
@@ -1001,12 +1003,20 @@ function promptAuthChoice(
         signal: AbortSignal.any([signal, controller.signal]),
       });
       return choices[Number(answer) - 1]?.id ?? "";
-    } catch {
-      throw new AuthError("Authentication cancelled.");
+    } catch (error) {
+      throw choiceFailure(error, [signal, controller.signal]);
     } finally {
       prompt.close();
     }
   };
+}
+
+function choiceFailure(error: unknown, signals: AbortSignal[]): unknown {
+  if (signals.some((signal) => signal.aborted))
+    return new AuthError("Authentication cancelled.");
+  if (error instanceof Error && error.name === "AbortError")
+    return new AuthError("Authentication cancelled.");
+  return error;
 }
 
 interface FinalRunReportOutput {
