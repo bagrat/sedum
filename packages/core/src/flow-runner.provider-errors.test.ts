@@ -126,14 +126,11 @@ describe("provider failures that affect the whole run", () => {
     ]);
   });
 
-  it("keeps other provider failures scoped to the step", async () => {
+  it("keeps other provider failures scoped to the step, as a failure retries can repeat", async () => {
     const result = await runWithFailingProvider(
       "click the login button",
       "timeout",
     );
-    expect(result).toMatchObject({
-      status: "could_not_run",
-      code: "unsupported_test",
-    });
+    expect(result).toMatchObject({ status: "failed" });
   });
 });

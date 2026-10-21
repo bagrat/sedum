@@ -797,6 +797,16 @@ export async function executeSentence(
       },
     );
   if (resolved.kind !== "resolved") {
+    // A page that changed under the locator, or one failed model call, is
+    // transient: fail the step so --retries can run the test again.
+    if (resolved.reason === "stale" || resolved.reason === "provider_error")
+      return record("failed", {
+        locator: resolved,
+        error: {
+          code: resolved.reason,
+          message: `Could not resolve this ${step.op} step (${resolved.reason}).`,
+        },
+      });
     if (
       resolved.reason === "none" ||
       resolved.reason === "ambiguous" ||
@@ -977,10 +987,13 @@ export async function executeSentence(
   } catch (error) {
     if (isRunWideProviderError(error)) throw await runWide(error);
     const actionError = error instanceof StepExecutionError ? error : null;
+    // A stale target is caught before dispatch, so nothing was clicked and the
+    // test can safely run again.
     const failed =
       actionError &&
       (actionError.code === "not_actionable" ||
-        actionError.code === "invalid_input");
+        actionError.code === "invalid_input" ||
+        actionError.code === "stale");
     const facts = {
       locator: resolved,
       replayFrame,
