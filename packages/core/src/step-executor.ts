@@ -224,24 +224,19 @@ async function observeRoute(
       throw new StepExecutionError(op, "action_uncertain", "post_dispatch");
     }
   }
-  if (after.document !== before.document) {
-    const settled = await page
-      .settle({
+  // A new document or route shows the action took effect. A page still loading
+  // or changing after that is for the next step to wait on, not a reason to
+  // doubt the action, so the wait below is best effort.
+  try {
+    if (after.document !== before.document)
+      await page.settle({
         state: "domcontentloaded",
         timeoutMs: remaining(4_000, "post_dispatch"),
-      })
-      .catch(() => ({ settled: false }));
-    if (!settled.settled)
-      throw new StepExecutionError(op, "action_uncertain", "post_dispatch");
-  }
-  if (after.route !== before.route) {
-    const observed = await quietPage(
-      page,
-      80,
-      remaining(1_000, "post_dispatch"),
-    ).catch(() => ({ quiet: false }));
-    if (!observed.quiet)
-      throw new StepExecutionError(op, "action_uncertain", "post_dispatch");
+      });
+    if (after.route !== before.route)
+      await quietPage(page, 80, remaining(1_000, "post_dispatch"));
+  } catch {
+    // The action already took effect.
   }
   return after.route !== before.route ? "route_changed" : "no_route_change";
 }
