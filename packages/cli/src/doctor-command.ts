@@ -10,6 +10,7 @@ import {
   DEFAULT_PROVIDER_MODEL,
   loadProjectConfig,
   ProjectConfigError,
+  type ProjectConfigOverrides,
   type ResolvedProjectConfig,
 } from "./config.js";
 import { providerDiagnostic } from "./diagnostics.js";
@@ -165,6 +166,30 @@ function browserOrigin(config: ResolvedProjectConfig): string {
     : `from ${config.browserSource}`;
 }
 
+function configOverrides(options: DoctorOptions): ProjectConfigOverrides {
+  return {
+    ...(options.environment ? { environment: options.environment } : {}),
+    ...(options.browser ? { browser: options.browser } : {}),
+  };
+}
+
+/** The config check for a configuration that did not load, naming its first problem. */
+function configFailure(error: unknown): DoctorCheck {
+  const detail =
+    error instanceof ProjectConfigError ? error.diagnostics[0] : undefined;
+  if (!detail)
+    return fail(
+      "config",
+      "Project configuration could not be loaded.",
+      "Correct sedum.config.yaml or the project-root .env and check file permissions.",
+    );
+  return fail(
+    "config",
+    `Project configuration could not be loaded: ${detail.message}`,
+    detail.fix,
+  );
+}
+
 export async function executeDoctorCommand(
   cwd: string,
   probes: DoctorProbes = {},
@@ -186,24 +211,10 @@ export async function executeDoctorCommand(
   try {
     config = probes.loadConfig
       ? await probes.loadConfig(cwd)
-      : await loadProjectConfig(cwd, process.env, {
-          ...(options.environment ? { environment: options.environment } : {}),
-          ...(options.browser ? { browser: options.browser } : {}),
-        });
+      : await loadProjectConfig(cwd, process.env, configOverrides(options));
     checks.push(pass("config", "Project configuration is valid."));
   } catch (error) {
-    const detail =
-      error instanceof ProjectConfigError ? error.diagnostics[0] : undefined;
-    checks.push(
-      fail(
-        "config",
-        detail
-          ? `Project configuration could not be loaded: ${detail.message}`
-          : "Project configuration could not be loaded.",
-        detail?.fix ??
-          "Correct sedum.config.yaml or the project-root .env and check file permissions.",
-      ),
-    );
+    checks.push(configFailure(error));
   }
 
   if (config) {

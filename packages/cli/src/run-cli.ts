@@ -24,7 +24,7 @@ import {
 } from "./output.js";
 import type { RunCommandExecution, RunCommandOptions } from "./run-command.js";
 import type { RelevanceProviderFactory } from "./affected-selection.js";
-import type { DoctorProbes } from "./doctor-command.js";
+import type { DoctorOptions, DoctorProbes } from "./doctor-command.js";
 import type { AuthOptions, AuthRuntime } from "./auth-command.js";
 import { AuthError } from "./auth-api.js";
 import {
@@ -107,6 +107,16 @@ const plainOutput: OutputCapabilities = {
 };
 
 /** Parse and execute explicit argv without reading or exiting the process. */
+function doctorOptions(options: {
+  env?: string;
+  browser?: string;
+}): DoctorOptions {
+  return {
+    ...(options.env ? { environment: options.env } : {}),
+    ...(options.browser ? { browser: options.browser as BrowserKind } : {}),
+  };
+}
+
 export async function runCli(
   args: readonly string[],
   version: string,
@@ -749,12 +759,11 @@ export async function runCli(
       async (options: { json: boolean; env?: string; browser?: string }) => {
         const { executeDoctorCommand, renderDoctorText } =
           await import("./doctor-command.js");
-        const result = await executeDoctorCommand(cwd, runtime.doctorProbes, {
-          ...(options.env ? { environment: options.env } : {}),
-          ...(options.browser
-            ? { browser: options.browser as BrowserKind }
-            : {}),
-        });
+        const result = await executeDoctorCommand(
+          cwd,
+          runtime.doctorProbes,
+          doctorOptions(options),
+        );
         writeOut(
           options.json
             ? `${JSON.stringify(result)}\n`

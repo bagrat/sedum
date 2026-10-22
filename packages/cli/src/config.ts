@@ -197,23 +197,56 @@ function isBrowserKind(value: unknown): value is BrowserKind {
   return value === "chrome" || value === "chromium";
 }
 
+interface BrowserSettings {
+  readonly flag: unknown;
+  readonly host: string | undefined;
+  readonly file: string | undefined;
+  readonly environment: unknown;
+  readonly environmentName: unknown;
+  readonly root: unknown;
+}
+
+/** Whether a browser source is a key in sedum.config.yaml. */
+function configKey(source: BrowserSource): boolean {
+  return source !== "--browser" && source !== "SEDUM_BROWSER";
+}
+
 /** The highest-precedence browser setting and where it came from. */
-function chooseBrowser(
-  flag: unknown,
-  variable: unknown,
-  environmentValue: unknown,
-  environmentName: string | null,
-  rootValue: unknown,
-): { readonly value: unknown; readonly source: BrowserSource } {
-  if (flag !== undefined) return { value: flag, source: "--browser" };
-  if (variable) return { value: variable, source: "SEDUM_BROWSER" };
-  if (environmentValue !== undefined && environmentName !== null)
+function browserSetting(settings: BrowserSettings): {
+  readonly value: unknown;
+  readonly source: BrowserSource;
+  readonly fromFile: boolean;
+} {
+  const host = settings.host?.trim();
+  const file = settings.file?.trim();
+  if (settings.flag !== undefined)
+    return { value: settings.flag, source: "--browser", fromFile: false };
+  if (host) return { value: host, source: "SEDUM_BROWSER", fromFile: false };
+  if (file) return { value: file, source: "SEDUM_BROWSER", fromFile: true };
+  if (
+    settings.environment !== undefined &&
+    typeof settings.environmentName === "string"
+  )
     return {
-      value: environmentValue,
-      source: `environments.${environmentName}.browser`,
+      value: settings.environment,
+      source: `environments.${settings.environmentName}.browser`,
+      fromFile: false,
     };
-  if (rootValue !== undefined) return { value: rootValue, source: "browser" };
-  return { value: DEFAULTS.browser, source: "default" };
+  if (settings.root !== undefined)
+    return { value: settings.root, source: "browser", fromFile: false };
+  return { value: DEFAULTS.browser, source: "default", fromFile: false };
+}
+
+/** The browser to use; reports an unsupported value and falls back to the default. */
+function chooseBrowser(
+  settings: BrowserSettings,
+  reportInvalid: (source: BrowserSource, fromFile: boolean) => void,
+): { readonly browser: BrowserKind; readonly source: BrowserSource } {
+  const setting = browserSetting(settings);
+  if (isBrowserKind(setting.value))
+    return { browser: setting.value, source: setting.source };
+  reportInvalid(setting.source, setting.fromFile);
+  return { browser: DEFAULTS.browser, source: setting.source };
 }
 
 /** Keys that once configured the OpenRouter vision resolver. */
@@ -981,34 +1014,28 @@ export async function loadProjectConfig(
       );
   }
 
-  const hostBrowser = hostEnvironment.SEDUM_BROWSER?.trim();
   const browserChoice = chooseBrowser(
-    overrides.browser,
-    hostBrowser || fileEnvironment.SEDUM_BROWSER?.trim(),
-    environment.browser,
-    typeof selected === "string" ? selected : null,
-    raw.browser,
+    {
+      flag: overrides.browser,
+      host: hostEnvironment.SEDUM_BROWSER,
+      file: fileEnvironment.SEDUM_BROWSER,
+      environment: environment.browser,
+      environmentName: selected,
+      root: raw.browser,
+    },
+    (source, fromFile) =>
+      diagnostic(
+        diagnostics,
+        fromFile ? environmentFile : file,
+        counter,
+        configKey(source) ? node(source) : undefined,
+        source,
+        "invalid_config_browser",
+        `\`${source}\` must be \`chrome\` or \`chromium\`.`,
+        "Choose one of the supported browser names.",
+      ),
   );
-  const browser = isBrowserKind(browserChoice.value)
-    ? browserChoice.value
-    : DEFAULTS.browser;
-  if (!isBrowserKind(browserChoice.value)) {
-    const fromConfig =
-      browserChoice.source !== "--browser" &&
-      browserChoice.source !== "SEDUM_BROWSER";
-    diagnostic(
-      diagnostics,
-      browserChoice.source === "SEDUM_BROWSER" && !hostBrowser
-        ? environmentFile
-        : file,
-      counter,
-      fromConfig ? node(browserChoice.source) : undefined,
-      browserChoice.source,
-      "invalid_config_browser",
-      `\`${browserChoice.source}\` must be \`chrome\` or \`chromium\`.`,
-      "Choose one of the supported browser names.",
-    );
-  }
+  const browser = browserChoice.browser;
 
   const include = stringList(
     tests.include,
