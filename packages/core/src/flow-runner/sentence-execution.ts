@@ -797,33 +797,12 @@ export async function executeSentence(
       },
     );
   if (resolved.kind !== "resolved") {
-    // A page that changed under the locator, or one failed model call, is
-    // transient: fail the step so --retries can run the test again.
-    if (resolved.reason === "stale" || resolved.reason === "provider_error")
-      return record("failed", {
-        locator: resolved,
-        error: {
-          code: resolved.reason,
-          message: `Could not resolve this ${step.op} step (${resolved.reason}).`,
-        },
-      });
-    if (
-      resolved.reason === "none" ||
-      resolved.reason === "ambiguous" ||
-      resolved.reason === "no_candidates"
-    )
-      return record("failed", {
-        locator: resolved,
-        error: {
-          // "none" reads like "no error"; say what happened.
-          code: resolved.reason === "none" ? "no_match" : resolved.reason,
-          message: `Could not resolve this ${step.op} step: ${unresolvedLocatorWhy(
-            resolved,
-            step.op,
-            Boolean(dependencies.visionResolver) && step.op === "click",
-          )}.`,
-        },
-      });
+    const failure = locatorFailure(
+      resolved,
+      step.op,
+      Boolean(dependencies.visionResolver) && step.op === "click",
+    );
+    if (failure) return record("failed", { locator: resolved, error: failure });
     return record(
       unsupported(
         step.source.file,
@@ -987,13 +966,8 @@ export async function executeSentence(
   } catch (error) {
     if (isRunWideProviderError(error)) throw await runWide(error);
     const actionError = error instanceof StepExecutionError ? error : null;
-    // A stale target is caught before dispatch, so nothing was clicked and the
-    // test can safely run again.
     const failed =
-      actionError &&
-      (actionError.code === "not_actionable" ||
-        actionError.code === "invalid_input" ||
-        actionError.code === "stale");
+      actionError !== null && STEP_FAILURE_CODES.has(actionError.code);
     const facts = {
       locator: resolved,
       replayFrame,
@@ -1016,4 +990,38 @@ export async function executeSentence(
           facts,
         );
   }
+}
+
+// A stale target is caught before dispatch, so nothing was clicked and the
+// test can safely run again.
+const STEP_FAILURE_CODES = new Set([
+  "not_actionable",
+  "invalid_input",
+  "stale",
+]);
+
+/** The step error for a locator result that should fail the step, or null. */
+function locatorFailure(
+  resolved: Extract<LocatorResult, { kind: "unresolved" }>,
+  op: string,
+  visionEnabled: boolean,
+): { code: string; message: string } | null {
+  // A page that changed under the locator, or one failed model call, is
+  // transient: fail the step so --retries can run the test again.
+  if (resolved.reason === "stale" || resolved.reason === "provider_error")
+    return {
+      code: resolved.reason,
+      message: `Could not resolve this ${op} step (${resolved.reason}).`,
+    };
+  if (
+    resolved.reason === "none" ||
+    resolved.reason === "ambiguous" ||
+    resolved.reason === "no_candidates"
+  )
+    return {
+      // "none" reads like "no error"; say what happened.
+      code: resolved.reason === "none" ? "no_match" : resolved.reason,
+      message: `Could not resolve this ${op} step: ${unresolvedLocatorWhy(resolved, op, visionEnabled)}.`,
+    };
+  return null;
 }
