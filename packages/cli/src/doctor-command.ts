@@ -56,6 +56,17 @@ export interface DoctorOptions {
   readonly browser?: BrowserKind;
 }
 
+/** Doctor options from the parsed `doctor` command line. */
+export function doctorOptions(options: {
+  env?: string;
+  browser?: string;
+}): DoctorOptions {
+  return {
+    ...(options.env ? { environment: options.env } : {}),
+    ...(options.browser ? { browser: options.browser as BrowserKind } : {}),
+  };
+}
+
 const pass = (id: DoctorCheckId, message: string): DoctorCheck => ({
   id,
   status: "pass",

@@ -217,24 +217,37 @@ function browserSetting(settings: BrowserSettings): {
   readonly source: BrowserSource;
   readonly fromFile: boolean;
 } {
-  const host = settings.host?.trim();
-  const file = settings.file?.trim();
-  if (settings.flag !== undefined)
-    return { value: settings.flag, source: "--browser", fromFile: false };
-  if (host) return { value: host, source: "SEDUM_BROWSER", fromFile: false };
-  if (file) return { value: file, source: "SEDUM_BROWSER", fromFile: true };
-  if (
-    settings.environment !== undefined &&
-    typeof settings.environmentName === "string"
-  )
-    return {
-      value: settings.environment,
-      source: `environments.${settings.environmentName}.browser`,
+  const name = settings.environmentName;
+  const candidates: readonly {
+    readonly value: unknown;
+    readonly source: BrowserSource;
+    readonly fromFile: boolean;
+  }[] = [
+    { value: settings.flag, source: "--browser", fromFile: false },
+    {
+      value: settings.host?.trim() || undefined,
+      source: "SEDUM_BROWSER",
       fromFile: false,
-    };
-  if (settings.root !== undefined)
-    return { value: settings.root, source: "browser", fromFile: false };
-  return { value: DEFAULTS.browser, source: "default", fromFile: false };
+    },
+    {
+      value: settings.file?.trim() || undefined,
+      source: "SEDUM_BROWSER",
+      fromFile: true,
+    },
+    {
+      value: typeof name === "string" ? settings.environment : undefined,
+      source: `environments.${String(name)}.browser`,
+      fromFile: false,
+    },
+    { value: settings.root, source: "browser", fromFile: false },
+  ];
+  return (
+    candidates.find((candidate) => candidate.value !== undefined) ?? {
+      value: DEFAULTS.browser,
+      source: "default",
+      fromFile: false,
+    }
+  );
 }
 
 /** The browser to use; reports an unsupported value and falls back to the default. */
