@@ -5,6 +5,7 @@ import type { ClassifiedFlowSentence } from "../flow-classification.js";
 import { executeAssertion } from "./assertions.js";
 import { detectStep } from "./detection.js";
 import {
+  DEFAULT_ACTION_BUDGET_MS,
   pendingTarget,
   performWithRecovery,
   refreshAfterQuiet,
@@ -82,6 +83,21 @@ export interface SentencePresentation {
 }
 
 /** @internal Execute one classified sentence and record it as one step. */
+/** Unresolved targets that fail the attempt, so retries rerun it. */
+const FAILED_LOCATOR_REASONS: readonly string[] = [
+  "none",
+  "ambiguous",
+  "no_candidates",
+  "stale",
+];
+
+/** Action refusals that prove no input was dispatched. */
+const FAILED_ACTION_CODES: readonly string[] = [
+  "not_actionable",
+  "stale",
+  "invalid_input",
+];
+
 export async function executeSentence(
   page: BrowserPage,
   step: ClassifiedFlowSentence,
@@ -797,11 +813,9 @@ export async function executeSentence(
       },
     );
   if (resolved.kind !== "resolved") {
-    if (
-      resolved.reason === "none" ||
-      resolved.reason === "ambiguous" ||
-      resolved.reason === "no_candidates"
-    )
+    // A page that never held still is a failed attempt, like an empty one:
+    // retries rerun it, and the step says why.
+    if (FAILED_LOCATOR_REASONS.includes(resolved.reason))
       return record("failed", {
         locator: resolved,
         error: {
@@ -880,6 +894,9 @@ export async function executeSentence(
     let observation = 1;
     await performWithRecovery({
       op: step.op,
+      // A target can stay disabled while the app works; wait as long as the
+      // step's grace allows, never less than the default action budget.
+      timeoutMs: Math.max(DEFAULT_ACTION_BUDGET_MS, actionGraceMs),
       ...(dependencies.signal ? { signal: dependencies.signal } : {}),
       perform: performAction,
       allowed: () => !visionAttempted,
@@ -978,9 +995,7 @@ export async function executeSentence(
     if (isRunWideProviderError(error)) throw await runWide(error);
     const actionError = error instanceof StepExecutionError ? error : null;
     const failed =
-      actionError &&
-      (actionError.code === "not_actionable" ||
-        actionError.code === "invalid_input");
+      actionError && FAILED_ACTION_CODES.includes(actionError.code);
     const facts = {
       locator: resolved,
       replayFrame,

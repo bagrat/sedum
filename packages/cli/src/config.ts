@@ -87,12 +87,15 @@ export interface ResolvedProjectConfig {
    * On by default for the direct TypeSafe endpoint only.
    */
   readonly screenshots: boolean;
+  /** How long a step waits for the page: a verify, a missing or busy target. */
+  readonly stepTimeoutMs: number;
 }
 
 interface RawEnvironment {
   readonly baseUrl?: unknown;
   readonly variables?: unknown;
   readonly provider?: unknown;
+  readonly stepTimeoutMs?: unknown;
 }
 
 interface RawConfig extends RawEnvironment {
@@ -124,6 +127,7 @@ const DEFAULTS = {
   outputDir: ".sedum/runs",
   reporterDir: ".sedum/reports",
   vision: { enabled: false },
+  stepTimeoutMs: 5_000,
 };
 
 export const DEFAULT_PROVIDER_BASE_URL = "https://api.typesafe.ai";
@@ -145,12 +149,13 @@ const allowed = {
     "vision",
     "provider",
     "screenshots",
+    "stepTimeoutMs",
   ]),
   tests: new Set(["directory", "include", "exclude"]),
   affected: new Set(["ignore"]),
   viewport: new Set(["width", "height"]),
   thresholds: new Set(["verify", "lowConfidenceBand", "contradiction"]),
-  environment: new Set(["baseUrl", "variables", "provider"]),
+  environment: new Set(["baseUrl", "variables", "provider", "stepTimeoutMs"]),
   vision: new Set(["enabled"]),
   provider: new Set(["name", "model", "apiKeyEnv"]),
 };
@@ -434,6 +439,98 @@ function positiveInteger(
   return value as number;
 }
 
+function validStepTimeout(value: unknown): value is number {
+  if (!Number.isSafeInteger(value)) return false;
+  return (value as number) >= 0 && (value as number) <= 120_000;
+}
+
+interface DiagnosticSink {
+  readonly diagnostics: ConfigDiagnostic[];
+  readonly file: string;
+  readonly counter: LineCounter;
+  readonly node: (key: string) => Node | null | undefined;
+}
+
+/** Report top-level sections that are present but not mappings. */
+function reportNonMappingSections(raw: RawConfig, sink: DiagnosticSink): void {
+  const { diagnostics, file, counter, node } = sink;
+  if (raw.tests !== undefined && !object(raw.tests))
+    diagnostic(
+      diagnostics,
+      file,
+      counter,
+      node("tests"),
+      "tests",
+      "invalid_config_type",
+      "Configuration key `tests` must be a mapping.",
+      "Use `tests: { directory: tests }`.",
+    );
+  for (const [key, value] of [
+    ["affected", raw.affected],
+    ["viewport", raw.viewport],
+    ["thresholds", raw.thresholds],
+    ["environments", raw.environments],
+    ["vision", raw.vision],
+    ["provider", raw.provider],
+  ] as const)
+    if (value !== undefined && !object(value))
+      diagnostic(
+        diagnostics,
+        file,
+        counter,
+        node(key),
+        key,
+        "invalid_config_type",
+        `Configuration key \`${key}\` must be a mapping.`,
+        `Write \`${key}: {}\` and add its documented child keys.`,
+      );
+}
+
+/** Report every invalid `stepTimeoutMs`, selected environment or not. */
+function reportInvalidStepTimeouts(
+  raw: RawConfig,
+  environments: Record<string, unknown>,
+  sink: DiagnosticSink,
+): void {
+  const layers: [string, unknown][] = [["stepTimeoutMs", raw.stepTimeoutMs]];
+  for (const [name, value] of Object.entries(environments))
+    if (object(value))
+      layers.push([`environments.${name}.stepTimeoutMs`, value.stepTimeoutMs]);
+  for (const [key, value] of layers) {
+    if (value === undefined || validStepTimeout(value)) continue;
+    diagnostic(
+      sink.diagnostics,
+      sink.file,
+      sink.counter,
+      sink.node(key),
+      key,
+      "invalid_config_step_timeout",
+      `Configuration key \`${key}\` must be a whole number of milliseconds from 0 to 120000.`,
+      "Use a value such as 30000 for 30 seconds, or 0 to judge each step once.",
+    );
+  }
+}
+
+/**
+ * Check `stepTimeoutMs` in every environment, so a mistake in one that is not
+ * selected still shows; the selected environment's value wins.
+ */
+function resolveStepTimeout(
+  raw: RawConfig,
+  environment: RawEnvironment,
+  sink: DiagnosticSink,
+): number {
+  reportInvalidStepTimeouts(raw, environmentMap(raw), sink);
+  return (
+    [environment.stepTimeoutMs, raw.stepTimeoutMs].find(validStepTimeout) ??
+    DEFAULTS.stepTimeoutMs
+  );
+}
+
+function environmentMap(raw: RawConfig): Record<string, unknown> {
+  return object(raw.environments) ? raw.environments : {};
+}
+
 function stringList(
   value: unknown,
   fallback: readonly string[],
@@ -712,37 +809,9 @@ export async function loadProjectConfig(
     : { raw: {} as RawConfig, document: null };
   const node = (key: string): Node | null | undefined =>
     document?.getIn(key.split("."), true) as Node | null | undefined;
+  const sink = { diagnostics, file, counter, node };
+  reportNonMappingSections(raw, sink);
   const tests = object(raw.tests) ? raw.tests : {};
-  if (raw.tests !== undefined && !object(raw.tests))
-    diagnostic(
-      diagnostics,
-      file,
-      counter,
-      node("tests"),
-      "tests",
-      "invalid_config_type",
-      "Configuration key `tests` must be a mapping.",
-      "Use `tests: { directory: tests }`.",
-    );
-  for (const [key, value] of [
-    ["affected", raw.affected],
-    ["viewport", raw.viewport],
-    ["thresholds", raw.thresholds],
-    ["environments", raw.environments],
-    ["vision", raw.vision],
-    ["provider", raw.provider],
-  ] as const)
-    if (value !== undefined && !object(value))
-      diagnostic(
-        diagnostics,
-        file,
-        counter,
-        node(key),
-        key,
-        "invalid_config_type",
-        `Configuration key \`${key}\` must be a mapping.`,
-        `Write \`${key}: {}\` and add its documented child keys.`,
-      );
   const viewport = object(raw.viewport) ? raw.viewport : {};
   const affected = object(raw.affected) ? raw.affected : {};
   const affectedIgnore = stringList(
@@ -1270,6 +1339,7 @@ export async function loadProjectConfig(
     counter,
     node("viewport.height"),
   );
+  const stepTimeoutMs = resolveStepTimeout(raw, environment, sink);
   if (diagnostics.length) throw new ProjectConfigError(diagnostics);
 
   return freeze({
@@ -1296,6 +1366,7 @@ export async function loadProjectConfig(
     providerModel,
     vision: { enabled: visionEnabled === true },
     screenshots: screenshots && providerName !== "clef",
+    stepTimeoutMs,
   });
 }
 
