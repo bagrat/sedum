@@ -280,6 +280,29 @@ environments:
     ]);
   });
 
+  it("checks every environment's browser, selected or not, whatever overrides it", async () => {
+    const root = await temporaryRoot();
+    await writeFile(
+      path.join(root, "sedum.config.yaml"),
+      "browser: chromiun\nenvironments:\n  ci:\n    browser: firefox\n  local:\n    browser: chromium\n",
+    );
+    const error = await loadProjectConfig(
+      root,
+      { SEDUM_BROWSER: "chromium" },
+      { browser: "chrome" },
+    ).catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(ProjectConfigError);
+    expect(
+      (error as ProjectConfigError).diagnostics.map((item) => [
+        item.key,
+        item.line,
+      ]),
+    ).toEqual([
+      ["browser", 1],
+      ["environments.ci.browser", 4],
+    ]);
+  });
+
   it("names the source of an unsupported browser", async () => {
     const root = await temporaryRoot();
     await writeFile(
@@ -296,7 +319,19 @@ environments:
         .map((item) => item.key);
     };
     expect(await keys({})).toEqual(["environments.ci.browser"]);
-    expect(await keys({ SEDUM_BROWSER: "safari" })).toEqual(["SEDUM_BROWSER"]);
+    // A higher-precedence setting does not hide a bad key in the shared config.
+    expect(await keys({ SEDUM_BROWSER: "safari" })).toEqual([
+      "environments.ci.browser",
+      "SEDUM_BROWSER",
+    ]);
+    const fromProcess = await loadProjectConfig(root, {
+      SEDUM_BROWSER: "safari",
+    }).catch((value: unknown) => value);
+    expect(
+      (fromProcess as ProjectConfigError).diagnostics.find(
+        (item) => item.key === "SEDUM_BROWSER",
+      )?.file,
+    ).toBe("<process environment>");
     await writeFile(path.join(root, ".env"), "SEDUM_BROWSER=safari\n");
     const error = await loadProjectConfig(root, {}).catch(
       (value: unknown) => value,
