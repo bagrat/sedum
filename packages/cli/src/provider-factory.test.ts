@@ -49,6 +49,7 @@ function config(name: "typesafe" | "clef"): ResolvedProjectConfig {
     providerModel: name === "clef" ? "clef" : "jev-latest",
     vision: { enabled: false },
     screenshots: false,
+    stepTimeoutMs: 5_000,
   };
 }
 
