@@ -363,7 +363,7 @@ describe("step executor", () => {
     expect(JSON.stringify(failure)).not.toContain("opaque-password");
   });
 
-  it("does not replay a click when post-action settling times out", async () => {
+  it("completes a click that opened a new document still loading, without replaying it", async () => {
     const { page, clickRef, settle, setVersion } = fakePage();
     clickRef.mockImplementationOnce(async () => {
       setVersion({
@@ -374,9 +374,11 @@ describe("step executor", () => {
       return { actionable: true, aim };
     });
     settle.mockResolvedValueOnce({ settled: false, elapsedMs: 4_000 });
-    await expect(
-      executeStep(page, { op: "click", target: clickTargetRef }),
-    ).rejects.toMatchObject({ code: "action_uncertain", retryable: false });
+    const result = await executeStep(page, {
+      op: "click",
+      target: clickTargetRef,
+    });
+    expect(result.outcome).toBe("route_changed");
     expect(clickRef).toHaveBeenCalledTimes(1);
   });
 
@@ -397,15 +399,14 @@ describe("step executor", () => {
     expect(settle).toHaveBeenCalled();
   });
 
-  it("does not replay after failed route quieting or an unreadable new document", async () => {
+  it("completes a route change that has not gone quiet, and doubts an unreadable new document", async () => {
     const first = fakePage();
     first.press.mockImplementationOnce(async () => {
       first.setVersion({ ...version, route: "https://example.test/spa" });
       first.setQuiet(false);
     });
-    await expect(
-      executeStep(first.page, { op: "press", key: "Enter" }),
-    ).rejects.toMatchObject({ code: "action_uncertain", retryable: false });
+    const result = await executeStep(first.page, { op: "press", key: "Enter" });
+    expect(result.outcome).toBe("route_changed");
     expect(first.press).toHaveBeenCalledTimes(1);
 
     const second = fakePage();
